@@ -70,6 +70,10 @@
         
         <form class="auth-form" id="loginForm">
             <input type="email" id="email" placeholder="Email" required>
+            <select id="role" style="padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px;">
+                <option value="user" selected>User</option>
+                <option value="admin">Admin</option>
+            </select>
             <input type="password" id="password" placeholder="Password" required>
             <div class="forgot-password">
                 <a href="forgot-password.html">Forgot Password?</a>
@@ -89,7 +93,8 @@
             e.preventDefault();
             
             const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
+                const password = document.getElementById('password').value;
+                const selectedRole = document.getElementById('role').value;
             const errorMessage = document.getElementById('errorMessage');
             
             // Clear previous error
@@ -105,7 +110,8 @@
                     },
                     body: JSON.stringify({
                         email: email,
-                        password: password
+                        password: password,
+                        selectedRole: selectedRole
                     })
                 });
                 
@@ -119,6 +125,15 @@
                     console.log('DEBUG: Login successful, storing token');
                     console.log('DEBUG: Token received:', data.access_token.substring(0, 20) + '...');
                     
+                    // Check if selected role matches user's actual role
+                    const userRole = data.user.role || 'user';
+                    
+                    if (selectedRole !== userRole) {
+                        // Role mismatch
+                        errorMessage.textContent = 'Invalid email or password';
+                        return;
+                    }
+                    
                     localStorage.setItem('token', data.access_token);
                     localStorage.setItem('user', JSON.stringify(data.user));
                     
@@ -126,9 +141,7 @@
                     console.log('DEBUG: Stored token:', localStorage.getItem('token').substring(0, 20) + '...');
                     console.log('DEBUG: Stored user data:', data.user);
                     
-                    // Check user role and redirect accordingly
-                    const userRole = data.user.role || 'user';
-                    
+                    // Redirect based on role
                     if (userRole === 'admin') {
                         // Redirect admin to Super Admin dashboard
                         window.location.href = '/SAdashboard.html';
@@ -146,4 +159,4 @@
         });
     </script>
 </body>
-</html> 
+</html>
