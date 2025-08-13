@@ -76,7 +76,7 @@ The SmartCal Team
         print(f"Error sending email: {e}")
         return False
 
-def send_booking_confirmation_visitor(visitor_email, visitor_name, agenda_title, host_name, booking_date, time_slot, duration, alias_name):
+def send_booking_confirmation_visitor(visitor_email, visitor_name, agenda_title, host_name, booking_date, time_slot, duration, alias_name, jitsi_link=None):
     """Send booking confirmation email to visitor"""
     try:
         # Format date and time
@@ -87,6 +87,11 @@ def send_booking_confirmation_visitor(visitor_email, visitor_name, agenda_title,
         # Format time
         time_obj = datetime.strptime(time_slot, '%H:%M')
         formatted_time = time_obj.strftime('%I:%M %p')
+        
+        # Add Jitsi meeting link to the email body if available
+        meeting_link_text = ""
+        if jitsi_link:
+            meeting_link_text = f"\n- Meeting Link: {jitsi_link}\n\nClick the link above at the scheduled time to join the video meeting."
         
         msg = Message(
             subject=f'✅ Meeting Confirmed: {agenda_title}',
@@ -101,7 +106,7 @@ Meeting Details:
 - Date: {formatted_date}
 - Time: {formatted_time}
 - Duration: {duration} minutes
-- Host: {host_name}
+- Host: {host_name}{meeting_link_text}
 
 Please make sure to join the meeting on time. If you need to reschedule or cancel, please contact {host_name} directly.
 
@@ -134,6 +139,14 @@ The SmartCal Team
             <div style="margin-bottom: 15px;">
                 <strong style="color: #555;">Host:</strong> {host_name}
             </div>
+            {f'''<div style="margin-bottom: 15px;">
+                <strong style="color: #555;">Meeting Link:</strong> <a href="{jitsi_link}" style="color: #007bff; text-decoration: none;">{jitsi_link}</a>
+            </div>
+            <div style="margin-bottom: 15px; background-color: #e8f4fd; padding: 10px; border-radius: 5px;">
+                <p style="margin: 0; color: #0056b3;">
+                    <strong>📹 Video Meeting:</strong> Click the link above at the scheduled time to join the video meeting.
+                </p>
+            </div>''' if jitsi_link else ''}
         </div>
         
         <div style="background: #e7f3ff; padding: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
@@ -160,7 +173,7 @@ The SmartCal Team
         print(f"Error sending visitor confirmation email: {e}")
         return False
 
-def send_booking_notification_host(host_email, host_name, visitor_name, visitor_email, agenda_title, booking_date, time_slot, duration):
+def send_booking_notification_host(host_email, host_name, visitor_name, visitor_email, agenda_title, booking_date, time_slot, duration, jitsi_link=None):
     """Send booking notification email to host"""
     try:
         # Format date and time
@@ -171,6 +184,11 @@ def send_booking_notification_host(host_email, host_name, visitor_name, visitor_
         # Format time
         time_obj = datetime.strptime(time_slot, '%H:%M')
         formatted_time = time_obj.strftime('%I:%M %p')
+        
+        # Add Jitsi meeting link to the email body if available
+        meeting_link_text = ""
+        if jitsi_link:
+            meeting_link_text = f"\n- Meeting Link: {jitsi_link}\n\nClick the link above at the scheduled time to join the video meeting."
         
         msg = Message(
             subject=f'📅 New Meeting Booking: {agenda_title}',
@@ -185,7 +203,7 @@ Booking Details:
 - Date: {formatted_date}
 - Time: {formatted_time}
 - Duration: {duration} minutes
-- Agenda: {agenda_title}
+- Agenda: {agenda_title}{meeting_link_text}
 
 Please make sure to be available for this meeting. You can contact the visitor at {visitor_email} if needed.
 
@@ -221,6 +239,14 @@ The SmartCal Team
             <div style="margin-bottom: 15px;">
                 <strong style="color: #555;">Agenda:</strong> {agenda_title}
             </div>
+            {f'''<div style="margin-bottom: 15px;">
+                <strong style="color: #555;">Meeting Link:</strong> <a href="{jitsi_link}" style="color: #007bff; text-decoration: none;">{jitsi_link}</a>
+            </div>
+            <div style="margin-bottom: 15px; background-color: #e8f4fd; padding: 10px; border-radius: 5px;">
+                <p style="margin: 0; color: #0056b3;">
+                    <strong>📹 Video Meeting:</strong> Click the link above at the scheduled time to join the video meeting.
+                </p>
+            </div>''' if jitsi_link else ''}
         </div>
         
         <div style="background: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
@@ -1440,6 +1466,13 @@ def get_available_slots(agenda_id, date):
     except Exception as e:
         return jsonify({'detail': str(e)}), 500
 
+# Define Jitsi base URLs
+BASE_JITSI_URL_DEV = "https://localhost:8443"
+BASE_JITSI_URL_PROD = "https://meet.jit.si"
+
+# Set app to debug mode for development
+app.debug = True
+
 @app.route('/booking/create', methods=['POST'])
 def create_booking():
     """Create a new booking"""
@@ -1482,26 +1515,33 @@ def create_booking():
         
         agenda_title, duration, alias_name, host_name, host_email = agenda_info
         
-        # Create booking
+        # Generate Jitsi room name and meeting link
+        room_name = f"smartcal-{agenda_id}-{int(datetime.datetime.now().timestamp())}"
+        
+        # Always use the public Jitsi server for now since local Docker setup might not be available
+        # This ensures links work for both host and visitor
+        jitsi_link = f"{BASE_JITSI_URL_PROD}/{room_name}"
+        
+        # Create booking with Jitsi room info
         cursor.execute('''
-            INSERT INTO bookings (agenda_id, visitor_name, visitor_email, booking_date, time_slot, created_at)
-            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ''', (agenda_id, visitor_name, visitor_email, booking_date, time_slot))
+            INSERT INTO bookings (agenda_id, visitor_name, visitor_email, booking_date, time_slot, created_at, jitsi_room, jitsi_link)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+        ''', (agenda_id, visitor_name, visitor_email, booking_date, time_slot, room_name, jitsi_link))
         
         booking_id = cursor.lastrowid
         conn.commit()
         conn.close()
         
-        # Send confirmation email to visitor
+        # Send confirmation email to visitor with Jitsi link
         send_booking_confirmation_visitor(
             visitor_email, visitor_name, agenda_title, host_name, 
-            booking_date, time_slot, duration, alias_name
+            booking_date, time_slot, duration, alias_name, jitsi_link
         )
         
-        # Send notification email to host
+        # Send notification email to host with Jitsi link
         send_booking_notification_host(
             host_email, host_name, visitor_name, visitor_email,
-            agenda_title, booking_date, time_slot, duration
+            agenda_title, booking_date, time_slot, duration, jitsi_link
         )
         
         return jsonify({
@@ -1531,7 +1571,8 @@ def get_upcoming_meetings(current_user):
                 b.created_at,
                 a.title as agenda_title,
                 a.duration,
-                a.alias_name
+                a.alias_name,
+                b.jitsi_link
             FROM bookings b
             JOIN agendas a ON b.agenda_id = a.id
             WHERE a.user_id = ? AND b.booking_date >= DATE('now')
@@ -1540,7 +1581,7 @@ def get_upcoming_meetings(current_user):
         
         meetings = []
         for row in cursor.fetchall():
-            booking_id, visitor_name, visitor_email, booking_date, time_slot, created_at, agenda_title, duration, alias_name = row
+            booking_id, visitor_name, visitor_email, booking_date, time_slot, created_at, agenda_title, duration, alias_name, jitsi_link = row
             
             # Format date and time
             from datetime import datetime
@@ -1561,7 +1602,8 @@ def get_upcoming_meetings(current_user):
                 'agenda_title': agenda_title,
                 'duration': duration,
                 'alias_name': alias_name,
-                'created_at': created_at
+                'created_at': created_at,
+                'jitsi_link': jitsi_link
             })
         
         conn.close()
@@ -1569,6 +1611,56 @@ def get_upcoming_meetings(current_user):
         return jsonify({
             'meetings': meetings,
             'count': len(meetings)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'detail': str(e)}), 500
+
+@app.route('/meetings/delete', methods=['POST'])
+@token_required
+def delete_meeting(current_user):
+    """Delete a meeting for the current user"""
+    try:
+        data = request.get_json()
+        meeting_id = data.get('meetingId')
+        
+        print(f"Received delete request for meeting ID: {meeting_id}, type: {type(meeting_id)}")
+        
+        if not meeting_id:
+            return jsonify({'detail': 'Meeting ID is required'}), 400
+        
+        # Convert meeting_id to integer if it's a string
+        if isinstance(meeting_id, str) and meeting_id.isdigit():
+            meeting_id = int(meeting_id)
+        
+        print(f"Converted meeting ID: {meeting_id}, type: {type(meeting_id)}")
+        
+        conn = sqlite3.connect('smartcal.db')
+        cursor = conn.cursor()
+        
+        # Check if the meeting exists and belongs to the user's agenda
+        cursor.execute('''
+            SELECT b.id 
+            FROM bookings b
+            JOIN agendas a ON b.agenda_id = a.id
+            WHERE b.id = ? AND a.user_id = ?
+        ''', (meeting_id, current_user))
+        
+        meeting = cursor.fetchone()
+        print(f"Meeting found: {meeting}")
+        
+        if not meeting:
+            conn.close()
+            return jsonify({'detail': 'Meeting not found or you do not have permission to delete it'}), 404
+        
+        # Delete the meeting
+        cursor.execute('DELETE FROM bookings WHERE id = ?', (meeting_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'message': 'Meeting deleted successfully',
+            'meetingId': meeting_id
         }), 200
         
     except Exception as e:
