@@ -202,6 +202,14 @@
             box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
         }
 
+        .valid-input {
+            border: 2px solid #4CAF50 !important;
+        }
+
+        .invalid-input {
+            border: 2px solid #f44336 !important;
+        }
+
         .checkbox-container {
             display: flex;
             align-items: center;
@@ -2038,19 +2046,27 @@
                 modalBody.className = 'modal-body';
                 modalBody.innerHTML = `
                      <div class="form-section">
+
+                        <div class="form-group">
+                             <label for="existingEmail">Enter Team Name :</label>
+                             <div class="input-with-button">
+                                 <input type="text" id="teamName" class="form-control" placeholder="Enter team name" required>
+                             </div>
+                         </div>
+
                          <div class="form-group">
                              <label for="existingEmail">Enter Existing Email</label>
                              <div class="input-with-button">
-                                 <input type="email" id="existingEmail" class="form-control" placeholder="Enter team member email">
-                                 <button class="dashboard-btn" onclick="addExistingMember()">Add</button>
+                                 <input type="email" id="existingEmail" class="form-control" placeholder="Enter team member email" oninput="validateEmail('existingEmail', 'existingEmailBtn')">
+                                 <button id="existingEmailBtn" class="dashboard-btn" onclick="addExistingMember()" disabled>Add</button>
                              </div>
                          </div>
                          
                          <div class="form-group">
                              <label for="outsiderEmail">Add Outsider Email</label>
                              <div class="input-with-button">
-                                 <input type="email" id="outsiderEmail" class="form-control" placeholder="Enter outsider email">
-                                 <button class="dashboard-btn" onclick="addOutsiderMember()">Add</button>
+                                 <input type="email" id="outsiderEmail" class="form-control" placeholder="Enter outsider email" oninput="validateEmail('outsiderEmail', 'outsiderEmailBtn')">
+                                 <button id="outsiderEmailBtn" class="dashboard-btn" onclick="addOutsiderMember()" disabled>Add</button>
                              </div>
                          </div>
                          
@@ -2192,24 +2208,49 @@
             }
         }
 
-        function addExistingMember() {
-            const email = document.getElementById('existingEmail').value.trim();
-            if (email) {
-                addMemberToList(email, 'existing');
-                document.getElementById('existingEmail').value = '';
+        function validateEmail(inputId, buttonId) {
+            const emailInput = document.getElementById(inputId);
+            const addButton = document.getElementById(buttonId);
+            const email = emailInput.value.trim();
+
+            // Regular expression for email validation
+            const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
+
+            if (emailRegex.test(email)) {
+                // Valid email format
+                addButton.disabled = false;
+                emailInput.classList.remove('invalid-input');
+                emailInput.classList.add('valid-input');
             } else {
-                alert('Please enter a valid email address');
+                // Invalid email format
+                addButton.disabled = true;
+                emailInput.classList.remove('valid-input');
+                if (email !== '') {
+                    emailInput.classList.add('invalid-input');
+                } else {
+                    emailInput.classList.remove('invalid-input');
+                }
             }
         }
 
+        function addExistingMember() {
+            const emailInput = document.getElementById('existingEmail');
+            const email = emailInput.value.trim();
+
+            addMemberToList(email, 'existing');
+            emailInput.value = '';
+            document.getElementById('existingEmailBtn').disabled = true;
+            emailInput.classList.remove('valid-input');
+        }
+
         function addOutsiderMember() {
-            const email = document.getElementById('outsiderEmail').value.trim();
-            if (email) {
-                addMemberToList(email, 'outsider');
-                document.getElementById('outsiderEmail').value = '';
-            } else {
-                alert('Please enter a valid email address');
-            }
+            const emailInput = document.getElementById('outsiderEmail');
+            const email = emailInput.value.trim();
+
+            addMemberToList(email, 'outsider');
+            emailInput.value = '';
+            document.getElementById('outsiderEmailBtn').disabled = true;
+            emailInput.classList.remove('valid-input');
         }
 
         function addMemberToList(email, type) {
