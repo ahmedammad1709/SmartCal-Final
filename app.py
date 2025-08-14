@@ -4,11 +4,12 @@ from flask_mail import Mail, Message
 import sqlite3
 import bcrypt
 import jwt
-import datetime
+from datetime import datetime, timedelta
 import os
 import json
 import random
 import string
+import uuid
 from functools import wraps
 
 app = Flask(__name__)
@@ -358,6 +359,10 @@ def init_db():
     
     conn.commit()
     conn.close()
+    
+    # Update database schema for teams functionality
+    from update_db_schema import update_database_schema
+    update_database_schema()
 
 # JWT token decorator
 def token_required(f):
@@ -454,7 +459,7 @@ def register():
         # Store user data and verification code temporarily
         verification_codes[email] = {
             'code': verification_code,
-            'timestamp': datetime.datetime.now(),
+            'timestamp': datetime.now(),
             'user_data': {
                 'name': name,
                 'email': email,
@@ -494,7 +499,7 @@ def verify_code():
         timestamp = stored_data['timestamp']
         
         # Check if code has expired (5 minutes)
-        time_diff = datetime.datetime.now() - timestamp
+        time_diff = datetime.now() - timestamp
         if time_diff.total_seconds() > 300:  # 5 minutes = 300 seconds
             # Remove expired code
             del verification_codes[email]
@@ -567,7 +572,7 @@ def login():
                 'user_id': user[0],
                 'email': user[2],
                 'role': user_role,
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+                'exp': datetime.utcnow() + timedelta(hours=24)
             }, app.config['SECRET_KEY'], algorithm="HS256")
             
             response_data = {
@@ -617,7 +622,7 @@ def forgot_password():
         # Store OTP with timestamp
         password_reset_codes[email] = {
             'otp': otp,
-            'timestamp': datetime.datetime.now(),
+            'timestamp': datetime.now(),
             'user_id': user[0]
         }
         
@@ -682,7 +687,7 @@ def verify_reset_otp():
         timestamp = stored_data['timestamp']
         
         # Check if OTP has expired (5 minutes)
-        time_diff = datetime.datetime.now() - timestamp
+        time_diff = datetime.now() - timestamp
         if time_diff.total_seconds() > 300:  # 5 minutes = 300 seconds
             # Remove expired OTP
             del password_reset_codes[email]
@@ -1516,7 +1521,7 @@ def create_booking():
         agenda_title, duration, alias_name, host_name, host_email = agenda_info
         
         # Generate Jitsi room name and meeting link
-        room_name = f"smartcal-{agenda_id}-{int(datetime.datetime.now().timestamp())}"
+        room_name = f"smartcal-{agenda_id}-{int(datetime.now().timestamp())}"
         
         # Always use the public Jitsi server for now since local Docker setup might not be available
         # This ensures links work for both host and visitor
@@ -1769,7 +1774,7 @@ def create_super_admin(current_user):
         verification_codes[email] = {
             'otp': otp,
             'password': password,
-            'timestamp': datetime.datetime.now()
+            'timestamp': datetime.now()
         }
         
         # Send OTP email
@@ -1842,7 +1847,7 @@ def verify_super_admin_otp(current_user):
         timestamp = stored_data['timestamp']
         
         # Check if OTP is expired (5 minutes)
-        if (datetime.datetime.now() - timestamp).total_seconds() > 300:
+        if (datetime.now() - timestamp).total_seconds() > 300:
             del verification_codes[email]
             return jsonify({'detail': 'OTP has expired'}), 400
         
@@ -1872,6 +1877,191 @@ def verify_super_admin_otp(current_user):
         
     except Exception as e:
         return jsonify({'detail': str(e)}), 500
+
+# Team Management Routes
+@app.route('/api/teams', methods=['POST'])
+def create_team():
+    try:
+        data = request.json
+        token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        
+        if not token:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_email = payload['email']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        # Validate required fields
+        if not data.get('teamName'):
+            return jsonify({'error': 'Team name is required'}), 400
+        
+        if not data.get('members') or len(data.get('members', [])) == 0:
+            return jsonify({'error': 'At least one team member is required'}), 400
+        
+        # Generate a unique team ID
+        team_id = str(uuid.uuid4())
+        
+        conn = sqlite3.connect('smartcal.db')
+        cursor = conn.cursor()
+        
+        # Insert team data
+        cursor.execute(
+            "INSERT INTO teams (team_id, team_name, created_by, meeting_duration) VALUES (?, ?, ?, ?)",
+            (team_id, data['teamName'], user_email, data.get('meetingDuration', 30))
+        )
+        
+        # Insert team members
+        for member in data['members']:
+            cursor.execute(
+                "INSERT INTO team_members (team_id, email, is_outsider) VALUES (?, ?, ?)",
+                (team_id, member['email'], member['isOutsider'])
+            )
+        
+        # Insert availability schedule
+        days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        for day in days:
+            if day in data.get('availability', {}):
+                is_available = data['availability'][day].get('isAvailable', False)
+                start_time = data['availability'][day].get('startTime', '09:00')
+                end_time = data['availability'][day].get('endTime', '17:00')
+                
+                cursor.execute(
+                    "INSERT INTO team_availability (team_id, day_of_week, start_time, end_time, is_available) VALUES (?, ?, ?, ?, ?)",
+                    (team_id, day, start_time, end_time, is_available)
+                )
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Team created successfully',
+            'teamId': team_id
+        })
+    except Exception as e:
+        print(f"Error creating team: {e}")
+        return jsonify({'error': 'Failed to create team'}), 500
+
+@app.route('/api/teams', methods=['GET'])
+def get_teams():
+    try:
+        token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        
+        if not token:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_email = payload['email']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        conn = sqlite3.connect('smartcal.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get teams created by the user
+        cursor.execute(
+            "SELECT * FROM teams WHERE created_by = ? ORDER BY created_at DESC",
+            (user_email,)
+        )
+        teams_data = cursor.fetchall()
+        
+        teams = []
+        for team in teams_data:
+            # Get team members
+            cursor.execute(
+                "SELECT * FROM team_members WHERE team_id = ?",
+                (team['team_id'],)
+            )
+            members_data = cursor.fetchall()
+            members = [{
+                'email': member['email'],
+                'isOutsider': bool(member['is_outsider'])
+            } for member in members_data]
+            
+            # Get team availability
+            cursor.execute(
+                "SELECT * FROM team_availability WHERE team_id = ?",
+                (team['team_id'],)
+            )
+            availability_data = cursor.fetchall()
+            availability = {}
+            for avail in availability_data:
+                availability[avail['day_of_week']] = {
+                    'isAvailable': bool(avail['is_available']),
+                    'startTime': avail['start_time'],
+                    'endTime': avail['end_time']
+                }
+            
+            teams.append({
+                'teamId': team['team_id'],
+                'teamName': team['team_name'],
+                'meetingDuration': team['meeting_duration'],
+                'createdAt': team['created_at'],
+                'members': members,
+                'availability': availability
+            })
+        
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'teams': teams
+        })
+    except Exception as e:
+        print(f"Error getting teams: {e}")
+        return jsonify({'error': 'Failed to get teams'}), 500
+
+@app.route('/api/teams/<team_id>', methods=['DELETE'])
+def delete_team(team_id):
+    try:
+        token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        
+        if not token:
+            return jsonify({'error': 'Authentication required'}), 401
+        
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_email = payload['email']
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        conn = sqlite3.connect('smartcal.db')
+        cursor = conn.cursor()
+        
+        # Verify the team exists and belongs to the user
+        cursor.execute(
+            "SELECT * FROM teams WHERE team_id = ? AND created_by = ?",
+            (team_id, user_email)
+        )
+        team = cursor.fetchone()
+        
+        if not team:
+            return jsonify({'error': 'Team not found or you do not have permission to delete it'}), 404
+        
+        # Delete the team (cascade will delete members and availability)
+        cursor.execute("DELETE FROM teams WHERE team_id = ?", (team_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Team deleted successfully'
+        })
+    except Exception as e:
+        print(f"Error deleting team: {e}")
+        return jsonify({'error': 'Failed to delete team'}), 500
 
 if __name__ == '__main__':
     init_db()

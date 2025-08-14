@@ -201,11 +201,11 @@
             border-color: #667eea;
             box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
         }
-
+        
         .valid-input {
             border: 2px solid #4CAF50 !important;
         }
-
+        
         .invalid-input {
             border: 2px solid #f44336 !important;
         }
@@ -338,6 +338,86 @@
             font-size: 12px;
         }
 
+        /* Team display styles */
+        .team-item {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 15px;
+            padding: 15px;
+            transition: transform 0.2s;
+        }
+
+        .team-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .team-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 8px;
+        }
+
+        .team-header h4 {
+            margin: 0;
+            color: #333;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .delete-team-btn {
+            background-color: transparent;
+            color: #ff5252;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0 5px;
+            transition: color 0.2s;
+        }
+
+        .delete-team-btn:hover {
+            color: #ff0000;
+        }
+
+        .team-details {
+            padding: 5px 0;
+        }
+
+        .team-duration {
+            color: #666;
+            font-size: 14px;
+            margin: 5px 0;
+        }
+
+        .team-members {
+            margin-top: 10px;
+        }
+
+        .members-title {
+            font-weight: 500;
+            margin: 5px 0;
+            color: #555;
+        }
+
+        .members-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .team-member-item {
+            background-color: #f5f5f5;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 13px;
+            color: #444;
+        }
+        
         /* Toast Notifications */
         .toast-notification {
             position: fixed;
@@ -2212,10 +2292,10 @@
             const emailInput = document.getElementById(inputId);
             const addButton = document.getElementById(buttonId);
             const email = emailInput.value.trim();
-
+            
             // Regular expression for email validation
             const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
-
+            
             if (emailRegex.test(email)) {
                 // Valid email format
                 addButton.disabled = false;
@@ -2232,21 +2312,21 @@
                 }
             }
         }
-
+        
         function addExistingMember() {
             const emailInput = document.getElementById('existingEmail');
             const email = emailInput.value.trim();
-
+            
             addMemberToList(email, 'existing');
             emailInput.value = '';
             document.getElementById('existingEmailBtn').disabled = true;
             emailInput.classList.remove('valid-input');
         }
-
+        
         function addOutsiderMember() {
             const emailInput = document.getElementById('outsiderEmail');
             const email = emailInput.value.trim();
-
+            
             addMemberToList(email, 'outsider');
             emailInput.value = '';
             document.getElementById('outsiderEmailBtn').disabled = true;
@@ -2275,22 +2355,238 @@
             membersList.appendChild(memberItem);
         }
 
-        function saveTeam() {
+        async function saveTeam() {
+            const teamName = document.getElementById('teamName').value.trim();
             const memberItems = document.querySelectorAll('.member-item');
+            const meetingDuration = document.getElementById('meetingDuration').value;
 
+            // Validate team name
+            if (!teamName) {
+                alert('Please enter a team name');
+                return;
+            }
+
+            // Validate team members
             if (memberItems.length === 0) {
                 alert('Please add at least one team member');
                 return;
             }
 
-            // Here you would normally collect the team members and send to the server
-            // For now, we'll just show a success message
-            alert('Team created successfully!');
-            closeTeamCreationModal();
+            // Collect team members
+            const members = [];
+            memberItems.forEach(item => {
+                const email = item.querySelector('span').textContent.split(' ')[0];
+                const isOutsider = item.classList.contains('member-outsider');
+                members.push({ email, isOutsider });
+            });
+
+            // Collect availability schedule
+            const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+            const availability = {};
+
+            days.forEach(day => {
+                const checkbox = document.getElementById(day);
+                const startTime = document.getElementById(`${day}Start`).value;
+                const endTime = document.getElementById(`${day}End`).value;
+
+                availability[day] = {
+                    isAvailable: checkbox.checked,
+                    startTime: startTime,
+                    endTime: endTime
+                };
+            });
+
+            // Prepare data for API
+            const teamData = {
+                teamName,
+                members,
+                meetingDuration: parseInt(meetingDuration),
+                availability
+            };
+
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    alert('You must be logged in to create a team');
+                    return;
+                }
+
+                // Show loading state
+                const createButton = document.querySelector('.form-actions .dashboard-btn');
+                const originalText = createButton.textContent;
+                createButton.textContent = 'Creating...';
+                createButton.disabled = true;
+
+                const response = await fetch('/api/teams', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(teamData)
+                });
+
+                const result = await response.json();
+
+                // Reset button state
+                createButton.textContent = originalText;
+                createButton.disabled = false;
+
+                if (response.ok) {
+                    // Show success modal
+                    showSuccessModal('Team Created Successfully', 'Your team has been created and is ready to use.');
+                    closeTeamCreationModal();
+                    // Refresh teams list
+                    loadTeams();
+                } else {
+                    alert(`Failed to create team: ${result.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Error creating team:', error);
+                alert('Failed to create team. Please try again.');
+            }
         }
 
         function showTeams() {
             openTeamsModal();
+        }
+
+        async function loadTeams() {
+            const teamLinksContainer = document.getElementById('teamLinks');
+            teamLinksContainer.innerHTML = '<p>Loading your Teams...</p>';
+
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    teamLinksContainer.innerHTML = '<p>Please log in to view your teams</p>';
+                    return;
+                }
+
+                const response = await fetch('/api/teams', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.teams) {
+                    if (result.teams.length === 0) {
+                        teamLinksContainer.innerHTML = '<p>You haven\'t created any teams yet. Click the "Create Team" button to get started.</p>';
+                    } else {
+                        teamLinksContainer.innerHTML = '';
+                        result.teams.forEach(team => {
+                            const teamElement = document.createElement('div');
+                            teamElement.className = 'team-item';
+                            teamElement.dataset.teamId = team.teamId;
+
+                            // Create team header with name and delete button
+                            const teamHeader = document.createElement('div');
+                            teamHeader.className = 'team-header';
+                            
+                            const teamName = document.createElement('h4');
+                            teamName.textContent = team.teamName;
+                            
+                            const deleteButton = document.createElement('button');
+                            deleteButton.className = 'delete-team-btn';
+                            deleteButton.innerHTML = '&times;';
+                            deleteButton.onclick = () => confirmDeleteTeam(team.teamId, team.teamName);
+                            
+                            teamHeader.appendChild(teamName);
+                            teamHeader.appendChild(deleteButton);
+                            teamElement.appendChild(teamHeader);
+
+                            // Create team details section
+                            const teamDetails = document.createElement('div');
+                            teamDetails.className = 'team-details';
+                            
+                            // Add meeting duration
+                            const duration = document.createElement('p');
+                            duration.className = 'team-duration';
+                            duration.textContent = `Meeting Duration: ${team.meetingDuration} minutes`;
+                            teamDetails.appendChild(duration);
+                            
+                            // Add members list
+                            const membersList = document.createElement('div');
+                            membersList.className = 'team-members';
+                            
+                            const membersTitle = document.createElement('p');
+                            membersTitle.className = 'members-title';
+                            membersTitle.textContent = 'Members:';
+                            membersList.appendChild(membersTitle);
+                            
+                            const membersContainer = document.createElement('div');
+                            membersContainer.className = 'members-container';
+                            
+                            team.members.forEach(member => {
+                                const memberItem = document.createElement('div');
+                                memberItem.className = 'team-member-item';
+                                memberItem.textContent = member.email + (member.isOutsider ? ' (Outsider)' : '');
+                                membersContainer.appendChild(memberItem);
+                            });
+                            
+                            membersList.appendChild(membersContainer);
+                            teamDetails.appendChild(membersList);
+                            teamElement.appendChild(teamDetails);
+                            
+                            teamLinksContainer.appendChild(teamElement);
+                        });
+                    }
+                } else {
+                    teamLinksContainer.innerHTML = `<p>Error loading teams: ${result.error || 'Unknown error'}</p>`;
+                }
+            } catch (error) {
+                console.error('Error loading teams:', error);
+                teamLinksContainer.innerHTML = '<p>Failed to load teams. Please try again later.</p>';
+            }
+        }
+
+        function confirmDeleteTeam(teamId, teamName) {
+            if (confirm(`Are you sure you want to delete the team "${teamName}"? This action cannot be undone.`)) {
+                deleteTeam(teamId);
+            }
+        }
+
+        async function deleteTeam(teamId) {
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    alert('You must be logged in to delete a team');
+                    return;
+                }
+
+                const response = await fetch(`/api/teams/${teamId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // Remove the team element from the DOM
+                    const teamElement = document.querySelector(`.team-item[data-team-id="${teamId}"]`);
+                    if (teamElement) {
+                        teamElement.remove();
+                    }
+                    
+                    // Show success message
+                    showSuccessModal('Team Deleted', 'The team has been successfully deleted.');
+                    
+                    // If no teams left, show empty message
+                    const teamLinksContainer = document.getElementById('teamLinks');
+                    if (!teamLinksContainer.querySelector('.team-item')) {
+                        teamLinksContainer.innerHTML = '<p>You haven\'t created any teams yet. Click the "Create Team" button to get started.</p>';
+                    }
+                } else {
+                    alert(`Failed to delete team: ${result.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                console.error('Error deleting team:', error);
+                alert('Failed to delete team. Please try again.');
+            }
         }
 
         // Notification functions
@@ -2333,6 +2629,70 @@
 
         function closeNotifications() {
             document.getElementById('notificationModal').style.display = 'none';
+        }
+
+        function showSuccessModal(title, message) {
+            // Create modal elements
+            const modal = document.createElement('div');
+            modal.id = 'successModal';
+            modal.style.display = 'block';
+            modal.style.position = 'fixed';
+            modal.style.zIndex = '1000';
+            modal.style.left = '0';
+            modal.style.top = '0';
+            modal.style.width = '100%';
+            modal.style.height = '100%';
+            modal.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+            
+            const modalContent = document.createElement('div');
+            modalContent.style.backgroundColor = 'white';
+            modalContent.style.margin = '15% auto';
+            modalContent.style.padding = '20px';
+            modalContent.style.width = '50%';
+            modalContent.style.maxWidth = '500px';
+            modalContent.style.borderRadius = '8px';
+            modalContent.style.textAlign = 'center';
+            
+            // Add success icon
+            const icon = document.createElement('div');
+            icon.innerHTML = '✅';
+            icon.style.fontSize = '48px';
+            icon.style.marginBottom = '15px';
+            
+            // Add title
+            const titleElement = document.createElement('h3');
+            titleElement.textContent = title;
+            titleElement.style.margin = '10px 0';
+            
+            // Add message
+            const messageElement = document.createElement('p');
+            messageElement.textContent = message;
+            messageElement.style.marginBottom = '20px';
+            
+            // Add close button
+            const closeButton = document.createElement('button');
+            closeButton.textContent = 'Close';
+            closeButton.className = 'dashboard-btn';
+            closeButton.onclick = function() {
+                document.body.removeChild(modal);
+            };
+            
+            // Assemble modal
+            modalContent.appendChild(icon);
+            modalContent.appendChild(titleElement);
+            modalContent.appendChild(messageElement);
+            modalContent.appendChild(closeButton);
+            modal.appendChild(modalContent);
+            
+            // Add to body
+            document.body.appendChild(modal);
+            
+            // Close when clicking outside
+            modal.onclick = function(event) {
+                if (event.target === modal) {
+                    document.body.removeChild(modal);
+                }
+            };
         }
 
         async function loadNotificationList() {
@@ -2582,6 +2942,7 @@
         loadUserInfo();
         loadUpcomingMeetings();
         loadUserPreferences();
+        loadTeams(); // Load teams
         loadNotifications();
         updateBookingPageSection(); // Call this function on page load
         updateBookingLinksSection(); // Call this function on page load
@@ -2602,7 +2963,14 @@
                 closeAgendaModal();
             }
             if (event.target === successModal) {
-                closeSuccessModal();
+                // Check if it's the dynamically created success modal or the static one
+                if (successModal.id === 'successModal' && successModal.parentNode) {
+                    // For dynamically created modal
+                    successModal.parentNode.removeChild(successModal);
+                } else {
+                    // For static modal
+                    closeSuccessModal();
+                }
             }
             if (event.target === calendarModal) {
                 closeCalendarModal();
