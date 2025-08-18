@@ -2,7 +2,7 @@ import sqlite3
 import uuid
 
 def update_database_schema():
-    """Update database schema to add teams functionality"""
+    """Update database schema to add teams functionality and meeting_type"""
     try:
         conn = sqlite3.connect('smartcal.db')
         cursor = conn.cursor()
@@ -20,6 +20,15 @@ def update_database_schema():
         if 'jitsi_link' not in columns:
             cursor.execute("ALTER TABLE bookings ADD COLUMN jitsi_link TEXT")
             print("Added jitsi_link column to bookings table")
+            
+        # Check if meeting_type column exists in agendas table
+        cursor.execute("PRAGMA table_info(agendas)")
+        agenda_columns = [column[1] for column in cursor.fetchall()]
+        
+        # Add meeting_type column if it doesn't exist
+        if 'meeting_type' not in agenda_columns:
+            cursor.execute("ALTER TABLE agendas ADD COLUMN meeting_type TEXT DEFAULT 'virtual'")
+            print("Added meeting_type column to agendas table")
         
         # Check if teams table exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='teams'")

@@ -123,11 +123,11 @@
                 <div class="agenda-title">${agenda.title}</div>
                 <div class="agenda-duration">Duration: ${agenda.duration} min</div>
                 <div class="agenda-description">${agenda.description ? agenda.description : ''}</div>
-                <a href="agenda_booking_link.html?user=${encodeURIComponent(user.name)}&agenda=${encodeURIComponent(agenda.title)}&duration=${encodeURIComponent(agenda.duration)}" class="btn btn-primary btn-sm book-btn">Book Now</a>
+                <a href="agenda_booking_link.html?user=${encodeURIComponent(user.name)}&agenda=${encodeURIComponent(agenda.title)}&duration=${encodeURIComponent(agenda.duration)}&meetingType=${encodeURIComponent(agenda.meeting_type || 'Virtual')}" class="btn btn-primary btn-sm book-btn">Book Now</a>
             `;
             agendaList.appendChild(card);
         });
     });
     </script>
 </body>
-</html> 
+</html>

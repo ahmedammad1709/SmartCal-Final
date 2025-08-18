@@ -47,6 +47,29 @@
             gap: 20px;
             margin-bottom: 30px;
         }
+        
+        /* Meeting Type Badge Styles */
+        .meeting-type-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 8px;
+            text-transform: capitalize;
+        }
+        
+        .meeting-type-badge.virtual {
+            background-color: #e1f5fe;
+            color: #0277bd;
+            border: 1px solid #b3e5fc;
+        }
+        
+        .meeting-type-badge.in-person {
+            background-color: #f1f8e9;
+            color: #558b2f;
+            border: 1px solid #dcedc8;
+        }
 
         .dashboard-card {
             background: white;
@@ -416,6 +439,9 @@
             padding: 4px 8px;
             font-size: 13px;
             color: #444;
+            display: block;
+            width: 100%;
+            margin-bottom: 5px;
         }
         
         /* Toast Notifications */
@@ -1192,6 +1218,13 @@
                         </select>
                     </div>
                     <div class="form-group">
+                        <label for="meetingType">Meeting Type *</label>
+                        <select id="meetingType" class="form-control" required>
+                            <option value="virtual" selected>Virtual</option>
+                            <option value="in-person">In-person</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label for="maxBookingsPerDay">Max Bookings per Day</label>
                         <input type="number" id="maxBookingsPerDay" class="form-control" value="5" min="1" max="20">
                     </div>
@@ -1608,135 +1641,195 @@
 
 
         // Load upcoming meetings
-        async function loadUpcomingMeetings() {
-            try {
-                const meetingsContainer = document.getElementById('upcomingMeetings');
+     async function loadUpcomingMeetings() {
+    try {
+        const meetingsContainer = document.getElementById('upcomingMeetings');
 
-                const response = await fetch('/meetings/upcoming', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log('Upcoming meetings data:', data);
-
-                    if (data.meetings.length === 0) {
-                        meetingsContainer.innerHTML = `
-                            <div class="no-meetings">
-                                <p>You have no upcoming meetings. Check back soon!</p>
-                            </div>
-                        `;
-                    } else {
-                        let meetingsHTML = '';
-                        data.meetings.forEach(meeting => {
-                            console.log('Meeting ID:', meeting.id, 'Type:', typeof meeting.id);
-                            meetingsHTML += `
-                                <div class="meeting-card" style="
-                                    background: white;
-                                    border: 1px solid #e0e0e0;
-                                    border-radius: 8px;
-                                    padding: 20px;
-                                    margin-bottom: 15px;
-                                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                                ">
-                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                                        <h4 style="margin: 0; color: #333; font-size: 16px;">${meeting.agenda_title}</h4>
-                                        <span style="
-                                            background: #007bff;
-                                            color: white;
-                                            padding: 4px 8px;
-                                            border-radius: 4px;
-                                            font-size: 12px;
-                                            font-weight: bold;
-                                        ">${meeting.duration} min</span>
-                                    </div>
-                                    <div style="margin-bottom: 8px;">
-                                        <strong style="color: #555;">👤 Visitor:</strong> ${meeting.visitor_name}
-                                    </div>
-                                    <div style="margin-bottom: 8px;">
-                                        <strong style="color: #555;">📧 Email:</strong> <a href="mailto:${meeting.visitor_email}" style="color: #007bff; text-decoration: none;">${meeting.visitor_email}</a>
-                                    </div>
-                                    <div style="margin-bottom: 8px;">
-                                        <strong style="color: #555;">📅 Date:</strong> ${meeting.formatted_date}
-                                    </div>
-                                    <div style="margin-bottom: 8px;">
-                                        <strong style="color: #555;">⏰ Time:</strong> ${meeting.formatted_time}
-                                    </div>
-                                    <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center;">
-                                        <div>
-                                            ${meeting.jitsi_link ? `
-                                            <a href="${meeting.jitsi_link}" target="_blank" rel="noopener noreferrer" onclick="window.open('${meeting.jitsi_link}', '_blank'); return false;" style="
-                                                display: inline-block;
-                                                background: #28a745;
-                                                color: white;
-                                                padding: 8px 16px;
-                                                border-radius: 4px;
-                                                text-decoration: none;
-                                                font-weight: bold;
-                                                text-align: center;
-                                                margin-right: 10px;
-                                            ">
-                                                <i class="fas fa-video"></i> Start Meeting
-                                            </a>` : `
-                                            <a href="#" onclick="alert('Meeting link not available yet. It will be available closer to the meeting time.'); return false;" style="
-                                                display: inline-block;
-                                                background: #6c757d;
-                                                color: white;
-                                                padding: 8px 16px;
-                                                border-radius: 4px;
-                                                text-decoration: none;
-                                                font-weight: bold;
-                                                text-align: center;
-                                                margin-right: 10px;
-                                            ">
-                                                <i class="fas fa-video"></i> Start Meeting
-                                            </a>`}
-                                        </div>
-                                        <button onclick="confirmDeleteMeeting('${meeting.id}')" style="
-                                            display: inline-block;
-                                            background: #dc3545;
-                                            color: white;
-                                            padding: 8px 16px;
-                                            border-radius: 4px;
-                                            border: none;
-                                            text-decoration: none;
-                                            font-weight: bold;
-                                            text-align: center;
-                                            cursor: pointer;
-                                        ">
-                                            <i class="fas fa-trash"></i> Delete Meeting
-                                        </button>
-                                    </div>
-                                    <div style="font-size: 12px; color: #888; margin-top: 10px;">
-                                        Booked on: ${new Date(meeting.created_at).toLocaleDateString()}
-                                    </div>
-                                </div>
-                            `;
-                        });
-
-                        meetingsContainer.innerHTML = meetingsHTML;
-                    }
-                } else {
-                    console.error('Failed to load meetings');
-                    meetingsContainer.innerHTML = `
-                        <div class="error-message">
-                            <p>Error loading meetings. Please try again.</p>
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                console.error('Error loading meetings:', error);
-                const meetingsContainer = document.getElementById('upcomingMeetings');
-                meetingsContainer.innerHTML = `
-                    <div class="error-message">
-                        <p>Error loading meetings. Please try again.</p>
-                    </div>
-                `;
+        const response = await fetch('/meetings/upcoming', {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
             }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to load meetings');
         }
+
+        const data = await response.json();
+        console.log('Upcoming meetings data:', data);
+
+        if (!data.meetings || data.meetings.length === 0) {
+            meetingsContainer.innerHTML = `
+                <div class="no-meetings">
+                    <p>You have no upcoming meetings. Check back soon!</p>
+                </div>
+            `;
+            return;
+        }
+
+        let meetingsHTML = '';
+        data.meetings.forEach(meeting => {
+            console.log('DEBUG - Meeting ID:', meeting.id, 'Meeting Type:', meeting.meeting_type);
+
+            // Determine meeting type styling
+            const isInPerson = meeting.meeting_type?.toLowerCase() === 'in-person';
+            const typeBg = isInPerson ? '#e6f7ff' : '#f0f4c3';
+            const typeColor = isInPerson ? '#0056b3' : '#33691e';
+            const typeLabel = meeting.meeting_type 
+                ? meeting.meeting_type.charAt(0).toUpperCase() + meeting.meeting_type.slice(1) 
+                : 'Virtual';
+
+            // Precompute safe values for inline handler
+            const safeLink = JSON.stringify(meeting.jitsi_link || '');
+            const safeType = JSON.stringify(meeting.meeting_type || '');
+
+                        // Start meeting button logic (only for virtual meetings)
+            let startMeetingBtn = '';
+            if (meeting.meeting_type?.toLowerCase() === 'virtual') {
+                startMeetingBtn = meeting.jitsi_link
+                    ? `<a href="${meeting.jitsi_link}" onclick="return startMeeting(${safeLink}, ${safeType});" target="_blank" rel="noopener noreferrer" style="
+                        display: inline-block;
+                        background: #28a745;
+                        color: white;
+                        padding: 8px 16px;
+                        border-radius: 4px;
+                        text-decoration: none;
+                        font-weight: bold;
+                        text-align: center;
+                        margin-right: 10px;
+                    ">
+                        <i class="fas fa-video"></i> Start Meeting
+                    </a>`
+                    : `<button type="button" onclick="return startMeeting('', ${safeType});" style="
+                        display: inline-block;
+                        background: #6c757d;
+                        color: white;
+                        padding: 8px 16px;
+                        border-radius: 4px;
+                        border: none;
+                        font-weight: bold;
+                        text-align: center;
+                        margin-right: 10px;
+                        cursor: pointer;
+                    ">
+                        <i class="fas fa-video"></i> Start Meeting
+                    </button>`;
+            }
+            // For in-person meetings, no start meeting button is shown
+
+            meetingsHTML += `
+                <div class="meeting-card" style="
+                    background: white;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin-bottom: 15px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                ">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                        <h4 style="margin: 0; color: #333; font-size: 16px;">${meeting.agenda_title}</h4>
+                        <span style="
+                            background: #007bff;
+                            color: white;
+                            padding: 4px 8px;
+                            border-radius: 4px;
+                            font-size: 12px;
+                            font-weight: bold;
+                        ">${meeting.duration} min</span>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #555;">👤 Visitor:</strong> ${meeting.visitor_name}
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #555;">📧 Email:</strong> <a href="mailto:${meeting.visitor_email}" style="color: #007bff; text-decoration: none;">${meeting.visitor_email}</a>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #555;">📅 Date:</strong> ${meeting.formatted_date}
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #555;">⏰ Time:</strong> ${meeting.formatted_time}
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #555;">🏢 Meeting Type:</strong> 
+                        <span style="
+                            display: inline-block;
+                            background: ${typeBg};
+                            color: ${typeColor};
+                            padding: 3px 8px;
+                            border-radius: 4px;
+                            font-size: 12px;
+                            font-weight: bold;
+                        ">
+                            ${typeLabel}
+                        </span>
+                    </div>
+                    <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>${startMeetingBtn}</div>
+                        <button onclick="confirmDeleteMeeting('${meeting.id}')" style="
+                            display: inline-block;
+                            background: #dc3545;
+                            color: white;
+                            padding: 8px 16px;
+                            border-radius: 4px;
+                            border: none;
+                            font-weight: bold;
+                            text-align: center;
+                            cursor: pointer;
+                        ">
+                            <i class="fas fa-trash"></i> Delete Meeting
+                        </button>
+                    </div>
+                    <div style="font-size: 12px; color: #888; margin-top: 10px;">
+                        Booked on: ${new Date(meeting.created_at).toLocaleDateString()}
+                    </div>
+                </div>
+            `;
+        });
+
+        meetingsContainer.innerHTML = meetingsHTML;
+
+    } catch (error) {
+        console.error('Error loading meetings:', error);
+        document.getElementById('upcomingMeetings').innerHTML = `
+            <div class="error-message">
+                <p>Error loading meetings. Please try again.</p>
+            </div>
+        `;
+    }
+}
+
+    // Helper to consistently handle Start Meeting clicks
+    function startMeeting(jitsiLink, meetingType) {
+        try {
+            const type = (meetingType || '').toLowerCase();
+            const link = (jitsiLink || '').trim();
+
+            // In-person meetings have no link
+            if (type === 'in-person') {
+                alert('Virtual meeting not available for in-person meeting.');
+                return false;
+            }
+
+            // Virtual meeting without link yet
+            if (!link) {
+                alert('Meeting link not available yet. It will be available closer to the meeting time.');
+                return false;
+            }
+
+            // Ensure the link is absolute and goes to meet.jit.si
+            const url = link.startsWith('http') ? link : `https://meet.jit.si/${link}`;
+
+            // Open in new tab safely
+            window.open(url, '_blank', 'noopener,noreferrer');
+            return false; // prevent default navigation from anchor
+        } catch (e) {
+            console.error('Failed to start meeting:', e);
+            alert('Unable to open meeting link. Please try again.');
+            return false;
+        }
+    }
+
 
         // Load user preferences
         async function loadUserPreferences() {
@@ -1874,6 +1967,7 @@
             const formData = {
                 title: document.getElementById('agendaTitle').value,
                 duration: parseInt(document.getElementById('meetingDuration').value),
+                meetingType: document.getElementById('meetingType').value,
                 maxBookingsPerDay: parseInt(document.getElementById('maxBookingsPerDay').value),
                 availability: {}
             };
@@ -2522,7 +2616,19 @@
                             team.members.forEach(member => {
                                 const memberItem = document.createElement('div');
                                 memberItem.className = 'team-member-item';
-                                memberItem.textContent = member.email + (member.isOutsider ? ' (Outsider)' : '');
+                                
+                                // Add color coding based on member type
+                                if (member.isOutsider) {
+                                    memberItem.style.backgroundColor = '#ffebee'; // Light red background
+                                    memberItem.style.color = '#c62828'; // Dark red text
+                                    memberItem.style.border = '1px solid #ffcdd2'; // Light red border
+                                } else {
+                                    memberItem.style.backgroundColor = '#e8f5e8'; // Light green background
+                                    memberItem.style.color = '#2e7d32'; // Dark green text
+                                    memberItem.style.border = '1px solid #c8e6c9'; // Light green border
+                                }
+                                
+                                memberItem.textContent = member.email + (member.isOutsider ? ' (Outsider)' : ' (Registered)');
                                 membersContainer.appendChild(memberItem);
                             });
                             
@@ -2783,7 +2889,23 @@
                 let html = '';
                 agendas.forEach(agenda => {
                     console.log('📋 Processing agenda:', agenda); // Debug log
-                    const bookingUrl = `agenda_booking_link.html?user=${encodeURIComponent(user.name)}&agenda=${encodeURIComponent(agenda.title)}&duration=${encodeURIComponent(agenda.duration)}`;
+                    console.log('Meeting type for agenda:', agenda.title, agenda.meeting_type, typeof agenda.meeting_type);
+                    // Normalize meeting type to ensure consistent capitalization
+                    let meetingType = agenda.meeting_type || 'Virtual';
+                    console.log('Initial meetingType:', meetingType, typeof meetingType);
+                    // Convert to lowercase for comparison, but keep original for display
+                    const meetingTypeLower = meetingType.toLowerCase();
+                    console.log('meetingTypeLower:', meetingTypeLower);
+                    // Ensure proper capitalization for display
+                    if (meetingTypeLower === 'virtual') {
+                        meetingType = 'Virtual';
+                    } else if (meetingTypeLower === 'in-person') {
+                        meetingType = 'In-person';
+                    }
+                    console.log('Final meetingType:', meetingType);
+                    // Log the meeting type before creating the URL
+                    console.log('Creating booking URL with meetingType:', meetingType);
+                    const bookingUrl = `agenda_booking_link.html?user=${encodeURIComponent(user.name)}&agenda=${encodeURIComponent(agenda.title)}&duration=${encodeURIComponent(agenda.duration)}&meetingType=${encodeURIComponent(meetingType)}`;
                     const fullUrl = `${window.location.origin}/${bookingUrl}`;
                     html += `
                         <div class='booking-link-card'>
@@ -2791,6 +2913,9 @@
                                 <div class='booking-link-info'>
                                     <h5 class='booking-title'>${agenda.title}</h5>
                                     <span class='booking-duration'>${agenda.duration} min meeting</span>
+                                    <span class='meeting-type-badge ${meetingTypeLower === 'virtual' ? 'virtual' : 'in-person'}'>
+                                        ${meetingType}
+                                    </span>
                                 </div>
                                 <div class='booking-link-actions'>
                                     <a href='${bookingUrl}' target='_blank' class='btn btn-primary btn-sm'>View Booking Page</a>

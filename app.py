@@ -325,6 +325,7 @@ def init_db():
             title TEXT NOT NULL,
             alias_name TEXT UNIQUE NOT NULL,
             duration INTEGER NOT NULL,
+            meeting_type TEXT DEFAULT 'virtual',
             max_bookings_per_day INTEGER DEFAULT 5,
             availability TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -777,7 +778,7 @@ def get_agendas(current_user):
         conn = sqlite3.connect('smartcal.db')
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT id, title, alias_name, duration, max_bookings_per_day, created_at
+            SELECT id, title, alias_name, duration, max_bookings_per_day, created_at, meeting_type
             FROM agendas WHERE user_id = ?
             ORDER BY created_at DESC
         ''', (current_user,))
@@ -792,7 +793,8 @@ def get_agendas(current_user):
                 'aliasName': agenda[2],
                 'duration': agenda[3],
                 'maxBookingsPerDay': agenda[4],
-                'createdAt': agenda[5]
+                'createdAt': agenda[5],
+                'meeting_type': agenda[6] if len(agenda) > 6 else 'Virtual'
             })
         
         return jsonify(agenda_list), 200
@@ -892,6 +894,9 @@ def create_agenda(current_user):
         data = request.get_json()
         title = data.get('title')
         duration = data.get('duration')
+        meeting_type = data.get('meetingType', 'virtual')
+        # Normalize meeting type to lowercase for consistent storage
+        meeting_type = meeting_type.lower()
         max_bookings_per_day = data.get('maxBookingsPerDay', 5)
         availability = data.get('availability', {})
         
@@ -917,13 +922,14 @@ def create_agenda(current_user):
         
         # Insert new agenda
         cursor.execute('''
-            INSERT INTO agendas (user_id, title, alias_name, duration, max_bookings_per_day, availability)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO agendas (user_id, title, alias_name, duration, meeting_type, max_bookings_per_day, availability)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
             current_user,
             title,
             alias_name,
             duration,
+            meeting_type,
             max_bookings_per_day,
             json.dumps(availability)
         ))
@@ -1006,8 +1012,73 @@ def get_admin_stats(current_user):
         cursor.execute('SELECT COUNT(*) FROM users WHERE DATE(created_at) = DATE("now")')
         pending_verifications = cursor.fetchone()[0]
         
-        # Get last broadcast sent (placeholder for now)
-        last_broadcast = "Jul 25, 2024"
+        # Get agendas created today
+        cursor.execute('SELECT COUNT(*) FROM agendas WHERE DATE(created_at) = DATE("now")')
+        agendas_created_today = cursor.fetchone()[0]
+        
+        # Create notifications table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                subject TEXT NOT NULL,
+                message TEXT NOT NULL,
+                recipients TEXT NOT NULL,
+                urgent BOOLEAN DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Get notifications sent today
+        cursor.execute('SELECT COUNT(*) FROM notifications WHERE DATE(created_at) = DATE("now")')
+        notifications_sent_today = cursor.fetchone()[0]
+        
+        # Get failed deliveries (placeholder for now - we'll set to 0)
+        failed_deliveries = 0
+        
+        # Get active recipients (total users)
+        active_recipients = total_users
+        
+        # Get last broadcast sent (current date)
+        from datetime import datetime
+        last_broadcast = datetime.now().strftime("%b %d, %Y")
+        
+        # Get total bookings
+        cursor.execute('SELECT COUNT(*) FROM bookings')
+        total_bookings = cursor.fetchone()[0]
+        
+        # Get bookings created today
+        cursor.execute('SELECT COUNT(*) FROM bookings WHERE DATE(created_at) = DATE("now")')
+        bookings_created_today = cursor.fetchone()[0]
+        
+        # Get upcoming bookings (future dates)
+        cursor.execute('SELECT COUNT(*) FROM bookings WHERE DATE(booking_date) > DATE("now")')
+        upcoming_bookings = cursor.fetchone()[0]
+        
+        # Get total teams
+        cursor.execute('SELECT COUNT(*) FROM teams')
+        teams_result = cursor.fetchone()
+        total_teams = teams_result[0] if teams_result else 0
+        
+        # Get recent system activity (last 5 bookings)
+        cursor.execute('''
+            SELECT b.id, b.visitor_name, b.booking_date, b.time_slot, a.title, u.name
+            FROM bookings b
+            JOIN agendas a ON b.agenda_id = a.id
+            JOIN users u ON a.user_id = u.id
+            ORDER BY b.created_at DESC
+            LIMIT 5
+        ''')
+        recent_bookings = []
+        for row in cursor.fetchall():
+            booking_id, visitor_name, booking_date, time_slot, agenda_title, host_name = row
+            recent_bookings.append({
+                'id': booking_id,
+                'visitorName': visitor_name,
+                'bookingDate': booking_date,
+                'timeSlot': time_slot,
+                'agendaTitle': agenda_title,
+                'hostName': host_name
+            })
         
         conn.close()
         
@@ -1015,7 +1086,16 @@ def get_admin_stats(current_user):
             'totalUsers': total_users,
             'totalAgendas': total_agendas,
             'pendingVerifications': pending_verifications,
-            'lastBroadcast': last_broadcast
+            'agendasCreatedToday': agendas_created_today,
+            'notificationsSentToday': notifications_sent_today,
+            'failedDeliveries': failed_deliveries,
+            'activeRecipients': active_recipients,
+            'lastBroadcast': last_broadcast,
+            'totalBookings': total_bookings,
+            'bookingsCreatedToday': bookings_created_today,
+            'upcomingBookings': upcoming_bookings,
+            'totalTeams': total_teams,
+            'recentBookings': recent_bookings
         }
         
         print(f"📊 Admin stats: {stats}")
@@ -1505,9 +1585,12 @@ def create_booking():
             conn.close()
             return jsonify({'detail': 'This slot is no longer available. Please select another.'}), 400
         
+        # Get meeting type from request if provided, otherwise get from database
+        meeting_type_from_request = data.get('meetingType')
+        
         # Get agenda and user details for email notifications
         cursor.execute('''
-            SELECT a.title, a.duration, a.alias_name, u.name, u.email
+            SELECT a.title, a.duration, a.alias_name, a.meeting_type, u.name, u.email
             FROM agendas a
             JOIN users u ON a.user_id = u.id
             WHERE a.id = ?
@@ -1518,16 +1601,43 @@ def create_booking():
             conn.close()
             return jsonify({'detail': 'Agenda not found'}), 404
         
-        agenda_title, duration, alias_name, host_name, host_email = agenda_info
+        agenda_title, duration, alias_name, db_meeting_type, host_name, host_email = agenda_info
         
-        # Generate Jitsi room name and meeting link
-        room_name = f"smartcal-{agenda_id}-{int(datetime.now().timestamp())}"
+        # Use meeting type from request if provided, otherwise use from database
+        meeting_type = meeting_type_from_request if meeting_type_from_request else db_meeting_type
         
-        # Always use the public Jitsi server for now since local Docker setup might not be available
-        # This ensures links work for both host and visitor
-        jitsi_link = f"{BASE_JITSI_URL_PROD}/{room_name}"
+        # Convert meeting_type to lowercase for comparison
+        meeting_type = meeting_type.lower() if meeting_type else 'virtual'
         
-        # Create booking with Jitsi room info
+        print(f"Meeting type used for booking: {meeting_type}")
+        
+        
+        # Generate Jitsi room name and meeting link only for virtual meetings
+        if meeting_type == 'virtual':
+            room_name = f"smartcal-{agenda_id}-{int(datetime.now().timestamp())}"
+            
+            # Always use the public Jitsi server for now since local Docker setup might not be available
+            # This ensures links work for both host and visitor
+            jitsi_link = f"{BASE_JITSI_URL_PROD}/{room_name}"
+        else:  # in-person meeting
+            room_name = None
+            jitsi_link = None
+            
+        print(f"Meeting type: {meeting_type}, Jitsi link: {jitsi_link}")
+        
+        # Double-check that in-person meetings never get Jitsi links
+        if meeting_type != 'virtual':
+            print(f"Ensuring in-person meeting has no Jitsi link")
+            room_name = None
+            jitsi_link = None
+            
+        # Triple-check to ensure in-person meetings never have Jitsi links
+        if meeting_type == 'in-person' and jitsi_link is not None:
+            print(f"WARNING: In-person meeting had a Jitsi link. Removing it.")
+            room_name = None
+            jitsi_link = None
+        
+        # Create booking with Jitsi room info (will be None for in-person meetings)
         cursor.execute('''
             INSERT INTO bookings (agenda_id, visitor_name, visitor_email, booking_date, time_slot, created_at, jitsi_room, jitsi_link)
             VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
@@ -1537,22 +1647,30 @@ def create_booking():
         conn.commit()
         conn.close()
         
-        # Send confirmation email to visitor with Jitsi link
-        send_booking_confirmation_visitor(
-            visitor_email, visitor_name, agenda_title, host_name, 
-            booking_date, time_slot, duration, alias_name, jitsi_link
-        )
-        
-        # Send notification email to host with Jitsi link
-        send_booking_notification_host(
-            host_email, host_name, visitor_name, visitor_email,
-            agenda_title, booking_date, time_slot, duration, jitsi_link
-        )
-        
-        return jsonify({
-            'message': 'Booking created successfully! Check your email for confirmation.',
-            'bookingId': booking_id
-        }), 200
+        # Only send emails with Jitsi link for virtual meetings
+        if meeting_type == 'virtual':
+            # Send confirmation email to visitor with Jitsi link
+            send_booking_confirmation_visitor(
+                visitor_email, visitor_name, agenda_title, host_name, 
+                booking_date, time_slot, duration, alias_name, jitsi_link
+            )
+            
+            # Send notification email to host with Jitsi link
+            send_booking_notification_host(
+                host_email, host_name, visitor_name, visitor_email,
+                agenda_title, booking_date, time_slot, duration, jitsi_link
+            )
+            
+            return jsonify({
+                'message': 'Booking created successfully! Check your email for confirmation.',
+                'bookingId': booking_id
+            }), 200
+        else:  # in-person meeting
+            # For in-person meetings, don't send emails with Jitsi link
+            return jsonify({
+                'message': 'In-person meeting booked successfully!',
+                'bookingId': booking_id
+            }), 200
         
     except Exception as e:
         return jsonify({'detail': str(e)}), 500
@@ -1577,7 +1695,8 @@ def get_upcoming_meetings(current_user):
                 a.title as agenda_title,
                 a.duration,
                 a.alias_name,
-                b.jitsi_link
+                b.jitsi_link,
+                a.meeting_type
             FROM bookings b
             JOIN agendas a ON b.agenda_id = a.id
             WHERE a.user_id = ? AND b.booking_date >= DATE('now')
@@ -1586,7 +1705,7 @@ def get_upcoming_meetings(current_user):
         
         meetings = []
         for row in cursor.fetchall():
-            booking_id, visitor_name, visitor_email, booking_date, time_slot, created_at, agenda_title, duration, alias_name, jitsi_link = row
+            booking_id, visitor_name, visitor_email, booking_date, time_slot, created_at, agenda_title, duration, alias_name, jitsi_link, meeting_type = row
             
             # Format date and time
             from datetime import datetime
@@ -1595,6 +1714,9 @@ def get_upcoming_meetings(current_user):
             
             time_obj = datetime.strptime(time_slot, '%H:%M')
             formatted_time = time_obj.strftime('%I:%M %p')
+            
+            # Normalize meeting_type to lowercase for comparison
+            meeting_type = meeting_type.lower() if meeting_type else 'virtual'
             
             meetings.append({
                 'id': booking_id,
@@ -1608,7 +1730,8 @@ def get_upcoming_meetings(current_user):
                 'duration': duration,
                 'alias_name': alias_name,
                 'created_at': created_at,
-                'jitsi_link': jitsi_link
+                'jitsi_link': jitsi_link,
+                'meeting_type': meeting_type
             })
         
         conn.close()

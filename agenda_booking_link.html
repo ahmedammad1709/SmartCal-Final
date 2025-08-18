@@ -30,6 +30,7 @@
             <hr class="my-3">
             <div class="agenda-title" id="agendaTitle">Agenda Title</div>
             <div class="duration" id="meetingDuration">Duration: 30 min</div>
+            <div class="meeting-type" id="meetingType">Meeting Type: Virtual</div>
         </div>
         <form id="bookingForm">
             <div class="mb-3">
@@ -53,7 +54,7 @@
             </div>
             <button type="submit" class="btn btn-primary w-100" id="bookButton" disabled>Book Meeting</button>
         </form>
-        <div id="bookingSuccess" class="alert alert-success mt-3 d-none">Booking successful! Check your email for details.</div>
+        <div id="bookingSuccess" class="alert alert-success mt-3 d-none"></div>
         <div id="bookingError" class="alert alert-danger mt-3 d-none">Booking failed. Please try again.</div>
         <div id="loadingMessage" class="alert alert-info mt-3 d-none">Loading available slots...</div>
     </div>
@@ -68,11 +69,32 @@
         const user = params.get('user') || 'John Doe';
         const agenda = params.get('agenda') || 'Consultation Call';
         const duration = params.get('duration') || '30';
+        const meetingType = params.get('meetingType') || 'Virtual';
+        console.log('Received meetingType parameter:', meetingType);
+        
+        // Store meeting type in a global variable for form submission
+        window.currentMeetingType = meetingType;
         
         // Update the page content with clear labels
         document.getElementById('userName').textContent = user;
         document.getElementById('agendaTitle').textContent = agenda;
         document.getElementById('meetingDuration').textContent = `Duration: ${duration} min`;
+        
+        // Normalize meeting type to ensure consistent capitalization
+        let displayMeetingType = meetingType;
+        // Convert to lowercase for comparison
+        const meetingTypeLower = meetingType.toLowerCase();
+        console.log('meetingTypeLower in booking page:', meetingTypeLower);
+        
+        // Ensure proper capitalization for display
+        if (meetingTypeLower === 'virtual') {
+            displayMeetingType = 'Virtual';
+        } else if (meetingTypeLower === 'in-person') {
+            displayMeetingType = 'In-person';
+        }
+        
+        console.log('Final displayMeetingType in booking page:', displayMeetingType);
+        document.getElementById('meetingType').textContent = `Meeting Type: ${displayMeetingType}`;
         
         // Update page title
         document.title = `Book with ${user} - ${agenda}`;
@@ -216,6 +238,10 @@
         bookButton.disabled = true;
         
         try {
+            // Get the meeting type from the global variable
+            const meetingType = window.currentMeetingType || 'Virtual';
+            console.log('Sending meeting type in booking request:', meetingType);
+            
             const response = await fetch('/booking/create', {
                 method: 'POST',
                 headers: {
@@ -226,7 +252,8 @@
                     visitorName: visitorName,
                     visitorEmail: visitorEmail,
                     bookingDate: bookingDate,
-                    timeSlot: selectedTime
+                    timeSlot: selectedTime,
+                    meetingType: meetingType  // Include meeting type in the request
                 })
             });
             
@@ -258,7 +285,18 @@
     function showSuccess(message) {
         const successDiv = document.getElementById('bookingSuccess');
         const errorDiv = document.getElementById('bookingError');
-        successDiv.textContent = message;
+        
+        // Check if the meeting type is in-person to customize the message
+        const meetingType = window.currentMeetingType ? window.currentMeetingType.toLowerCase() : 'virtual';
+        
+        // For in-person meetings, don't mention email
+        if (meetingType === 'in-person') {
+            successDiv.textContent = 'In-person meeting booked successfully!';
+        } else {
+            // For virtual meetings, mention email
+            successDiv.textContent = 'Booking created successfully! Check your email for confirmation.';
+        }
+        
         successDiv.classList.remove('d-none');
         errorDiv.classList.add('d-none');
         
@@ -280,4 +318,4 @@
     }
     </script>
 </body>
-</html> 
+</html>
