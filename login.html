@@ -62,40 +62,113 @@
         .forgot-password a:hover {
             text-decoration: underline;
         }
+        .role-toggle {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        .role-btn {
+            padding: 8px 20px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #f8f9fa;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        .role-btn.active {
+            background: #000;
+            color: white;
+            border-color: #000;
+        }
+        .admin-form {
+            display: none;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+        }
+        .admin-form.active {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .user-form {
+            opacity: 1;
+            transform: translateY(0);
+            transition: all 0.3s ease;
+        }
+        .user-form.hidden {
+            display: none;
+            opacity: 0;
+            transform: translateY(-10px);
+        }
     </style>
 </head>
 <body>
     <div class="auth-container">
         <h2 style="text-align: center; margin-bottom: 30px;">Login to SmartCal</h2>
         
-        <form class="auth-form" id="loginForm">
+        <div class="role-toggle">
+            <button id="userToggle" class="role-btn active">User</button>
+            <button id="adminToggle" class="role-btn">Admin</button>
+        </div>
+        
+        <form class="auth-form user-form" id="loginForm">
             <input type="email" id="email" placeholder="Email" required>
-            <select id="role" style="padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px;">
-                <option value="user" selected>User</option>
-                <option value="admin">Admin</option>
-            </select>
             <input type="password" id="password" placeholder="Password" required>
             <div class="forgot-password">
                 <a href="forgot-password.html">Forgot Password?</a>
             </div>
             <button type="submit">Login</button>
+            
+            <div class="auth-links">
+                <a href="register.html">Don't have an account? Register</a>
+            </div>
+        </form>
+        
+        <form class="auth-form admin-form" id="adminLoginForm">
+            <input type="email" id="adminEmail" placeholder="Admin Email" required>
+            <input type="password" id="adminPassword" placeholder="Admin Password" required>
+            <button type="submit">Admin Login</button>
         </form>
         
         <div class="error-message" id="errorMessage"></div>
-        
-        <div class="auth-links">
-            <a href="register.html">Don't have an account? Register</a>
-        </div>
     </div>
 
     <script>
+        // Toggle between user and admin forms
+        const userToggle = document.getElementById('userToggle');
+        const adminToggle = document.getElementById('adminToggle');
+        const userForm = document.getElementById('loginForm');
+        const adminForm = document.getElementById('adminLoginForm');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        userToggle.addEventListener('click', () => {
+            userToggle.classList.add('active');
+            adminToggle.classList.remove('active');
+            userForm.classList.remove('hidden');
+            adminForm.classList.remove('active');
+            errorMessage.textContent = '';
+        });
+        
+        adminToggle.addEventListener('click', () => {
+            adminToggle.classList.add('active');
+            userToggle.classList.remove('active');
+            userForm.classList.add('hidden');
+            adminForm.classList.add('active');
+            errorMessage.textContent = '';
+        });
+        
+        // User login form submission
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const email = document.getElementById('email').value;
-                const password = document.getElementById('password').value;
-                const selectedRole = document.getElementById('role').value;
-            const errorMessage = document.getElementById('errorMessage');
+            const password = document.getElementById('password').value;
+            const selectedRole = 'user'; // Always user for this form
             
             // Clear previous error
             errorMessage.textContent = '';
@@ -125,15 +198,6 @@
                     console.log('DEBUG: Login successful, storing token');
                     console.log('DEBUG: Token received:', data.access_token.substring(0, 20) + '...');
                     
-                    // Check if selected role matches user's actual role
-                    const userRole = data.user.role || 'user';
-                    
-                    if (selectedRole !== userRole) {
-                        // Role mismatch
-                        errorMessage.textContent = 'Invalid email or password';
-                        return;
-                    }
-                    
                     localStorage.setItem('token', data.access_token);
                     localStorage.setItem('user', JSON.stringify(data.user));
                     
@@ -141,19 +205,68 @@
                     console.log('DEBUG: Stored token:', localStorage.getItem('token').substring(0, 20) + '...');
                     console.log('DEBUG: Stored user data:', data.user);
                     
-                    // Redirect based on role
-                    if (userRole === 'admin') {
-                        // Redirect admin to Super Admin dashboard
-                        window.location.href = '/SAdashboard.html';
-                    } else {
-                        // Redirect regular user to normal dashboard
-                        window.location.href = '/dashboard.html';
-                    }
+                    // Redirect to user dashboard
+                    window.location.href = '/dashboard.html';
                 } else {
                     errorMessage.textContent = data.detail || 'Login failed - no token received';
                 }
             } catch (error) {
                 console.error('DEBUG: Login error:', error);
+                errorMessage.textContent = 'Network error. Please try again.';
+            }
+        });
+        
+        // Admin login form submission
+        document.getElementById('adminLoginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('adminEmail').value;
+            const password = document.getElementById('adminPassword').value;
+            
+            // Clear previous error
+            errorMessage.textContent = '';
+            
+            try {
+                console.log('DEBUG: Attempting admin login with email:', email);
+                
+                const response = await fetch('/users/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password,
+                        selectedRole: 'admin'
+                    })
+                });
+                
+                console.log('DEBUG: Admin login response status:', response.status);
+                
+                const data = await response.json();
+                console.log('DEBUG: Admin login response data:', data);
+                
+                if (response.ok && data.access_token) {
+                    // Check if user is actually an admin
+                    const userRole = data.user.role || 'user';
+                    
+                    if (userRole !== 'admin') {
+                        // Not an admin
+                        errorMessage.textContent = 'Invalid admin credentials';
+                        return;
+                    }
+                    
+                    // Store JWT token
+                    localStorage.setItem('token', data.access_token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    
+                    // Redirect to admin dashboard
+                    window.location.href = '/SAdashboard.html';
+                } else {
+                    errorMessage.textContent = data.detail || 'Admin login failed';
+                }
+            } catch (error) {
+                console.error('DEBUG: Admin login error:', error);
                 errorMessage.textContent = 'Network error. Please try again.';
             }
         });
