@@ -493,6 +493,9 @@ def verify_code():
         
         # Check if verification code exists and is valid
         if email not in verification_codes:
+            # Log the issue for debugging
+            print(f"Verification failed: No code found for email {email}")
+            print(f"Current verification codes: {list(verification_codes.keys())}")
             return jsonify({'detail': 'No verification code found for this email'}), 400
         
         stored_data = verification_codes[email]
@@ -508,6 +511,8 @@ def verify_code():
         
         # Check if code matches
         if code != stored_code:
+            # Don't delete the code on invalid attempt
+            print(f"Verification failed: Invalid code for email {email}. Expected {stored_code}, got {code}")
             return jsonify({'detail': 'Invalid verification code'}), 400
         
         # Code is valid, create the user account
@@ -528,13 +533,16 @@ def verify_code():
             conn.commit()
             conn.close()
             
-            # Remove verification code from memory
+            # Only remove verification code after successful account creation
             del verification_codes[email]
+            print(f"Account created successfully for {email}")
             
             return jsonify({'message': 'Account created successfully'}), 201
             
-        except sqlite3.IntegrityError:
+        except sqlite3.IntegrityError as e:
             conn.close()
+            print(f"Database error during account creation: {str(e)}")
+            # Don't delete verification code on database error
             return jsonify({'detail': 'Email or alias already exists'}), 400
             
     except Exception as e:
