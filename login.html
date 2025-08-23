@@ -135,6 +135,15 @@
             <button type="submit">Admin Login</button>
         </form>
         
+        <!-- OTP Verification Form (Hidden by default) -->
+        <form class="auth-form" id="otpVerificationForm" style="display: none;">
+            <h3 style="text-align: center; margin-bottom: 15px;">2FA Verification</h3>
+            <p style="text-align: center; margin-bottom: 20px;">A verification code has been sent to your email. Please enter it below.</p>
+            <input type="text" id="otpCode" placeholder="Enter OTP Code" required>
+            <input type="hidden" id="otpEmail">
+            <button type="submit">Verify OTP</button>
+        </form>
+        
         <div class="error-message" id="errorMessage"></div>
     </div>
 
@@ -246,16 +255,77 @@
                 const data = await response.json();
                 console.log('DEBUG: Admin login response data:', data);
                 
-                if (response.ok && data.access_token) {
-                    // Check if user is actually an admin
-                    const userRole = data.user.role || 'user';
-                    
-                    if (userRole !== 'admin') {
-                        // Not an admin
-                        errorMessage.textContent = 'Invalid admin credentials';
+                if (response.ok) {
+                    // Check if OTP is required
+                    if (data.require_otp) {
+                        // Show OTP verification form
+                        document.getElementById('adminLoginForm').style.display = 'none';
+                        document.getElementById('otpVerificationForm').style.display = 'flex';
+                        document.getElementById('otpVerificationForm').style.flexDirection = 'column';
+                        document.getElementById('otpVerificationForm').style.gap = '20px';
+                        document.getElementById('otpEmail').value = email;
                         return;
                     }
                     
+                    if (data.access_token) {
+                        // Check if user is actually an admin
+                        const userRole = data.user.role || 'user';
+                        
+                        if (userRole !== 'admin') {
+                            // Not an admin
+                            errorMessage.textContent = 'Invalid admin credentials';
+                            return;
+                        }
+                        
+                        // Store JWT token
+                        localStorage.setItem('token', data.access_token);
+                        localStorage.setItem('user', JSON.stringify(data.user));
+                        
+                        // Redirect to admin dashboard
+                        window.location.href = '/SAdashboard.html';
+                    }
+                } else {
+                    errorMessage.textContent = data.detail || 'Admin login failed';
+                }
+            } catch (error) {
+                console.error('DEBUG: Admin login error:', error);
+                errorMessage.textContent = 'Network error. Please try again.';
+            }
+        });
+        
+        // OTP Verification form submission
+        document.getElementById('otpVerificationForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('otpEmail').value;
+            const otp = document.getElementById('otpCode').value;
+            const password = document.getElementById('adminPassword').value;
+            
+            // Clear previous error
+            errorMessage.textContent = '';
+            
+            try {
+                console.log('DEBUG: Verifying OTP for admin:', email);
+                
+                const response = await fetch('/users/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password,
+                        selectedRole: 'admin',
+                        otp: otp
+                    })
+                });
+                
+                console.log('DEBUG: OTP verification response status:', response.status);
+                
+                const data = await response.json();
+                console.log('DEBUG: OTP verification response data:', data);
+                
+                if (response.ok && data.access_token) {
                     // Store JWT token
                     localStorage.setItem('token', data.access_token);
                     localStorage.setItem('user', JSON.stringify(data.user));
@@ -263,11 +333,16 @@
                     // Redirect to admin dashboard
                     window.location.href = '/SAdashboard.html';
                 } else {
-                    errorMessage.textContent = data.detail || 'Admin login failed';
+                    // Show error and go back to admin login form
+                    errorMessage.textContent = data.detail || 'OTP verification failed';
+                    document.getElementById('otpVerificationForm').style.display = 'none';
+                    document.getElementById('adminLoginForm').style.display = 'flex';
                 }
             } catch (error) {
-                console.error('DEBUG: Admin login error:', error);
+                console.error('DEBUG: OTP verification error:', error);
                 errorMessage.textContent = 'Network error. Please try again.';
+                document.getElementById('otpVerificationForm').style.display = 'none';
+                document.getElementById('adminLoginForm').style.display = 'flex';
             }
         });
     </script>

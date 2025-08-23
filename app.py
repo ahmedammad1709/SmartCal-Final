@@ -555,6 +555,7 @@ def login():
         email = data.get('email')
         password = data.get('password')
         selected_role = data.get('selectedRole', 'user')
+        otp = data.get('otp')  # OTP for admin 2FA
         
         if not email or not password:
             return jsonify({'detail': 'Email and password are required'}), 400
@@ -563,44 +564,77 @@ def login():
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
         user = cursor.fetchone()
+        
+        if not user:
+            conn.close()
+            return jsonify({'detail': 'Invalid email or password'}), 401
+            
+        # Check if user is banned
+        user_banned = user[7] if len(user) > 7 else False
+        if user_banned:
+            conn.close()
+            return jsonify({'detail': 'Your account has been banned. Please contact the administrator.'}), 403
+        
+        # Verify password
+        if not bcrypt.checkpw(password.encode('utf-8'), user[4]):
+            conn.close()
+            return jsonify({'detail': 'Invalid email or password'}), 401
+        
+        user_role = user[6] if len(user) > 6 else 'user'
+        
+        # Check if selected role matches user's actual role
+        if selected_role == 'admin' and user_role != 'admin':
+            conn.close()
+            return jsonify({'detail': 'Invalid admin credentials'}), 401
+        
+        # For admin login, handle 2FA
+        if selected_role == 'admin' and user_role == 'admin':
+            # If OTP is provided, verify it
+            if otp:
+                if email not in verification_codes or verification_codes[email]['otp'] != otp:
+                    conn.close()
+                    return jsonify({'detail': 'Invalid OTP'}), 401
+                
+                # OTP is valid, clean up
+                del verification_codes[email]
+            else:
+                # Generate and send OTP for admin
+                verification_code = generate_verification_code()
+                verification_codes[email] = {
+                    'otp': verification_code,
+                    'timestamp': datetime.now()
+                }
+                
+                # Send OTP via email
+                send_verification_email(email, verification_code)
+                
+                conn.close()
+                return jsonify({'detail': 'OTP sent', 'require_otp': True, 'email': email}), 200
+        
         conn.close()
         
-        if user and bcrypt.checkpw(password.encode('utf-8'), user[4]):
-            # Check if user is banned
-            user_banned = user[7] if len(user) > 7 else False
-            if user_banned:
-                return jsonify({'detail': 'Your account has been banned. Please contact the administrator.'}), 403
-            
-            user_role = user[6] if len(user) > 6 else 'user'
-            
-            # Check if selected role matches user's actual role
-            if selected_role != user_role:
-                return jsonify({'detail': 'Invalid email or password'}), 401
-            
-            token = jwt.encode({
-                'user_id': user[0],
+        token = jwt.encode({
+            'user_id': user[0],
+            'email': user[2],
+            'role': user_role,
+            'exp': datetime.utcnow() + timedelta(hours=24)
+        }, app.config['SECRET_KEY'], algorithm="HS256")
+        
+        response_data = {
+            'access_token': token,
+            'token_type': 'bearer',
+            'user': {
+                'id': user[0],
+                'name': user[1],
                 'email': user[2],
-                'role': user_role,
-                'exp': datetime.utcnow() + timedelta(hours=24)
-            }, app.config['SECRET_KEY'], algorithm="HS256")
-            
-            response_data = {
-                'access_token': token,
-                'token_type': 'bearer',
-                'user': {
-                    'id': user[0],
-                    'name': user[1],
-                    'email': user[2],
-                    'alias': user[3],
-                    'role': user_role
-                }
+                'alias': user[3],
+                'role': user_role
             }
-            
-            print(f"🔐 Login successful for {user[2]} with role: {user_role}")
-            
-            return jsonify(response_data), 200
-        else:
-            return jsonify({'detail': 'Invalid email or password'}), 401
+        }
+        
+        print(f"🔐 Login successful for {user[2]} with role: {user_role}")
+        
+        return jsonify(response_data), 200
             
     except Exception as e:
         return jsonify({'detail': str(e)}), 500
