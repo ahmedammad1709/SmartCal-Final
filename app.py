@@ -1209,6 +1209,148 @@ def get_all_users(current_user):
     except Exception as e:
         return jsonify({'detail': str(e)}), 500
 
+# Admin: List all teams with details
+@app.route('/admin/teams', methods=['GET'])
+@token_required
+def admin_list_teams(current_user):
+    try:
+        # Ensure requester is admin
+        conn = sqlite3.connect('smartcal.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT role, email, name FROM users WHERE id = ?', (current_user,))
+        me = cursor.fetchone()
+        if not me or me['role'] != 'admin':
+            conn.close()
+            return jsonify({'detail': 'Only admin users can view all teams'}), 403
+
+        # Fetch all teams
+        cursor.execute('SELECT * FROM teams ORDER BY created_at DESC')
+        team_rows = cursor.fetchall()
+
+        teams = []
+        for team in team_rows:
+            team_id = team['team_id']
+            # Creator user info
+            cursor.execute('SELECT name, email FROM users WHERE email = ?', (team['created_by'],))
+            creator = cursor.fetchone()
+            creator_name = creator['name'] if creator else team['created_by']
+
+            # Members
+            cursor.execute('SELECT email, is_outsider FROM team_members WHERE team_id = ?', (team_id,))
+            members_rows = cursor.fetchall()
+            members = [{'email': r['email'], 'isOutsider': bool(r['is_outsider'])} for r in members_rows]
+
+            teams.append({
+                'teamId': team_id,
+                'teamName': team['team_name'],
+                'createdBy': team['created_by'],
+                'createdByName': creator_name,
+                'meetingDuration': team['meeting_duration'],
+                'meetingDate': team['meeting_date'] if 'meeting_date' in team.keys() else None,
+                'meetingType': team['meeting_type'] if 'meeting_type' in team.keys() else None,
+                'jitsiLink': team['jitsi_link'] if 'jitsi_link' in team.keys() else None,
+                'createdAt': team['created_at'],
+                'members': members
+            })
+
+        conn.close()
+        return jsonify({'teams': teams}), 200
+    except Exception as e:
+        return jsonify({'detail': str(e)}), 500
+
+# Admin: Delete a team and notify members
+@app.route('/admin/teams/<team_id>', methods=['DELETE'])
+@token_required
+def admin_delete_team(current_user, team_id):
+    try:
+        conn = sqlite3.connect('smartcal.db')
+        cursor = conn.cursor()
+
+        # Check admin
+        cursor.execute('SELECT role, email, name FROM users WHERE id = ?', (current_user,))
+        me = cursor.fetchone()
+        if not me or me[0] != 'admin':
+            conn.close()
+            return jsonify({'detail': 'Only admin users can delete teams'}), 403
+        admin_email = me[1]
+        admin_name = me[2]
+
+        # Fetch team details
+        cursor.execute('SELECT team_name, created_by, meeting_date, meeting_type FROM teams WHERE team_id = ?', (team_id,))
+        team = cursor.fetchone()
+        if not team:
+            conn.close()
+            return jsonify({'detail': 'Team not found'}), 404
+        team_name, created_by, meeting_date, meeting_type = team
+
+        # Collect recipients
+        cursor.execute('SELECT email FROM team_members WHERE team_id = ?', (team_id,))
+        member_emails = [row[0] for row in cursor.fetchall()]
+        recipients = list(dict.fromkeys(member_emails + [created_by]))
+
+        # Delete dependent rows then team
+        cursor.execute('DELETE FROM team_members WHERE team_id = ?', (team_id,))
+        cursor.execute('DELETE FROM team_availability WHERE team_id = ?', (team_id,))
+        cursor.execute('DELETE FROM teams WHERE team_id = ?', (team_id,))
+
+        # Verify deletion
+        cursor.execute('SELECT COUNT(1) FROM teams WHERE team_id = ?', (team_id,))
+        gone = cursor.fetchone()[0] == 0
+
+        conn.commit()
+        conn.close()
+
+        # Send emails (best-effort)
+        sent = []
+        try:
+            with app.app_context():
+                for recipient in recipients:
+                    msg = Message(
+                        subject=f"Team Deleted by Admin: {team_name}",
+                        recipients=[recipient],
+                        body=f"""
+Hello,
+
+The team \"{team_name}\" has been deleted by admin {admin_name} ({admin_email}).
+
+Details:
+- Meeting Type: {meeting_type or 'N/A'}
+{('- Meeting Date: ' + str(meeting_date) + '\n') if meeting_date else ''}
+
+You are receiving this message because you were part of this team.
+
+Regards,
+SmartCal
+""",
+                        html=f"""
+<html><body>
+  <h2>Team Deleted by Admin: {team_name}</h2>
+  <p>Hello,</p>
+  <p>The team \"{team_name}\" has been deleted by admin {admin_name} ({admin_email}).</p>
+  <h3>Details</h3>
+  <ul>
+    <li>Meeting Type: {meeting_type or 'N/A'}</li>
+    {f'<li>Meeting Date: {meeting_date}</li>' if meeting_date else ''}
+  </ul>
+  <p>You are receiving this message because you were part of this team.</p>
+  <p>Regards,<br/>SmartCal</p>
+</body></html>
+"""
+                    )
+                    try:
+                        mail.send(msg)
+                        sent.append(recipient)
+                    except Exception as e:
+                        print(f"Email send failure to {recipient}: {e}")
+        except Exception as e:
+            print(f"Bulk email failure: {e}")
+
+        return jsonify({'message': 'Team deleted successfully', 'verifiedDeleted': gone, 'emailsSentTo': sent}), 200
+    except Exception as e:
+        return jsonify({'detail': str(e)}), 500
+
 @app.route('/admin/agendas', methods=['GET'])
 @token_required
 def get_all_agendas(current_user):

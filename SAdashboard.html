@@ -178,6 +178,9 @@
                         <a class="nav-link" href="#" onclick="showSection('agendas')">
                             <i class="fas fa-calendar"></i> View All Agendas
                         </a>
+                        <a class="nav-link" href="#" onclick="showSection('teams')">
+                            <i class="fas fa-people-group"></i> View All Teams
+                        </a>
                         <a class="nav-link" href="#" onclick="showSection('notifications')">
                             <i class="fas fa-bell"></i> Send Notification
                         </a>
@@ -486,6 +489,30 @@
                                 <tbody id="agendasTableBody">
                                     <!-- Agendas will be loaded dynamically -->
                                 </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- View All Teams Section -->
+                    <div id="teams" class="section">
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h2><i class="fas fa-people-group me-2"></i>View All Teams</h2>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Team Name</th>
+                                        <th>Created By</th>
+                                        <th>Duration</th>
+                                        <th>Type</th>
+                                        <th>Date</th>
+                                        <th>Members</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="teamsTableBody"></tbody>
                             </table>
                         </div>
                     </div>
@@ -1163,6 +1190,8 @@
                 loadAllUsers();
             } else if (sectionId === 'agendas') {
                 loadAllAgendas();
+            } else if (sectionId === 'teams') {
+                loadAllTeams();
             }
         }
 
@@ -1459,6 +1488,66 @@
             }
         }
 
+
+        // Teams Admin
+        async function loadAllTeams() {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch('/admin/teams', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) {
+                    alert('Failed to load teams');
+                    return;
+                }
+                const data = await res.json();
+                const tbody = document.getElementById('teamsTableBody');
+                tbody.innerHTML = '';
+                (data.teams || []).forEach(team => {
+                    const tr = document.createElement('tr');
+                    const membersText = (team.members || []).map(m => `${m.email}${m.isOutsider ? ' (Outsider)' : ''}`).join(', ');
+                    tr.innerHTML = `
+                        <td>${team.teamName}</td>
+                        <td>${team.createdByName} (${team.createdBy})</td>
+                        <td>${team.meetingDuration} min</td>
+                        <td>${team.meetingType || ''}</td>
+                        <td>${team.meetingDate || ''}</td>
+                        <td style="max-width: 350px; white-space: normal;">${membersText || '-'}</td>
+                        <td>
+                            <button class="btn btn-danger btn-sm" onclick="adminDeleteTeam('${team.teamId}', '${team.teamName.replace(/'/g, "\\'")}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error('Failed to load teams:', e);
+                alert('Error loading teams');
+            }
+        }
+
+        async function adminDeleteTeam(teamId, teamName) {
+            if (!confirm(`Are you sure you want to delete the team "${teamName}"? This will notify all members.`)) return;
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(`/admin/teams/${teamId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) {
+                    alert('Team deleted successfully');
+                    loadAllTeams();
+                    loadAdminStats();
+                } else {
+                    alert(`Failed to delete team: ${data.detail || 'Unknown error'}`);
+                }
+            } catch (e) {
+                console.error('Delete team failed:', e);
+                alert('Network error while deleting team');
+            }
+        }
 
 
         // Super Admin Creation Functions
