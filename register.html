@@ -87,10 +87,14 @@
             const password = document.getElementById('password').value;
             const errorMessage = document.getElementById('errorMessage');
             const successMessage = document.getElementById('successMessage');
+            const submitBtn = document.querySelector('#registerForm button[type="submit"]');
+            const originalBtnText = submitBtn.textContent;
             
             // Clear previous messages
             errorMessage.textContent = '';
             successMessage.textContent = '';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
             
             try {
                 console.log('DEBUG: Attempting registration with:', { name, email, alias });
@@ -127,11 +131,15 @@
                 } else {
                     errorMessage.textContent = data.detail || 'Registration failed';
                     successMessage.textContent = '';
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalBtnText;
                 }
             } catch (error) {
                 console.error('DEBUG: Registration error:', error);
                 errorMessage.textContent = 'Network error. Please try again.';
                 successMessage.textContent = '';
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalBtnText;
             }
         });
     </script>

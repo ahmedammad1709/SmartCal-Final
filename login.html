@@ -235,6 +235,11 @@
             // Clear previous error
             errorMessage.textContent = '';
             
+            const adminSubmitBtn = document.querySelector('#adminLoginForm button[type="submit"]');
+            const adminBtnOriginalText = adminSubmitBtn.textContent;
+            adminSubmitBtn.disabled = true;
+            adminSubmitBtn.textContent = 'Processing...';
+
             try {
                 console.log('DEBUG: Attempting admin login with email:', email);
                 
@@ -258,12 +263,17 @@
                 if (response.ok) {
                     // Check if OTP is required
                     if (data.require_otp) {
+                        // Update button to indicate OTP sent
+                        adminSubmitBtn.textContent = 'OTP sent';
                         // Show OTP verification form
                         document.getElementById('adminLoginForm').style.display = 'none';
                         document.getElementById('otpVerificationForm').style.display = 'flex';
                         document.getElementById('otpVerificationForm').style.flexDirection = 'column';
                         document.getElementById('otpVerificationForm').style.gap = '20px';
                         document.getElementById('otpEmail').value = email;
+                        // Re-enable button for future use
+                        adminSubmitBtn.disabled = false;
+                        adminSubmitBtn.textContent = adminBtnOriginalText;
                         return;
                     }
                     
@@ -274,6 +284,8 @@
                         if (userRole !== 'admin') {
                             // Not an admin
                             errorMessage.textContent = 'Invalid admin credentials';
+                            adminSubmitBtn.disabled = false;
+                            adminSubmitBtn.textContent = adminBtnOriginalText;
                             return;
                         }
                         
@@ -286,10 +298,18 @@
                     }
                 } else {
                     errorMessage.textContent = data.detail || 'Admin login failed';
+                    adminSubmitBtn.disabled = false;
+                    adminSubmitBtn.textContent = adminBtnOriginalText;
                 }
             } catch (error) {
                 console.error('DEBUG: Admin login error:', error);
                 errorMessage.textContent = 'Network error. Please try again.';
+            } finally {
+                // If not redirected or OTP path, make sure button is restored
+                if (document.getElementById('adminLoginForm').style.display !== 'none') {
+                    adminSubmitBtn.disabled = false;
+                    adminSubmitBtn.textContent = adminBtnOriginalText;
+                }
             }
         });
         
@@ -304,6 +324,11 @@
             // Clear previous error
             errorMessage.textContent = '';
             
+            const otpSubmitBtn = document.querySelector('#otpVerificationForm button[type="submit"]');
+            const otpBtnOriginalText = otpSubmitBtn.textContent;
+            otpSubmitBtn.disabled = true;
+            otpSubmitBtn.textContent = 'Verifying...';
+
             try {
                 console.log('DEBUG: Verifying OTP for admin:', email);
                 
@@ -337,12 +362,19 @@
                     errorMessage.textContent = data.detail || 'OTP verification failed';
                     document.getElementById('otpVerificationForm').style.display = 'none';
                     document.getElementById('adminLoginForm').style.display = 'flex';
+                    otpSubmitBtn.disabled = false;
+                    otpSubmitBtn.textContent = otpBtnOriginalText;
                 }
             } catch (error) {
                 console.error('DEBUG: OTP verification error:', error);
                 errorMessage.textContent = 'Network error. Please try again.';
                 document.getElementById('otpVerificationForm').style.display = 'none';
                 document.getElementById('adminLoginForm').style.display = 'flex';
+            } finally {
+                if (document.getElementById('otpVerificationForm').style.display !== 'none') {
+                    otpSubmitBtn.disabled = false;
+                    otpSubmitBtn.textContent = otpBtnOriginalText;
+                }
             }
         });
     </script>
