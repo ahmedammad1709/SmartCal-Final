@@ -1379,7 +1379,33 @@
 
         function deleteUser(userId) {
             if (confirm('Are you sure you want to permanently delete this user? This action cannot be undone.')) {
-                alert('User deleted successfully!');
+                (async () => {
+                    try {
+                        const token = localStorage.getItem('token');
+                        const response = await fetch('/admin/delete-user', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ userId })
+                        });
+
+                        if (response.ok) {
+                            const result = await response.json();
+                            alert(result.message);
+                            // Refresh users and dashboard stats
+                            loadAllUsers();
+                            loadAdminStats();
+                        } else {
+                            const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+                            alert('Error deleting user: ' + (error.detail || 'Unexpected error'));
+                        }
+                    } catch (err) {
+                        console.error('Error deleting user:', err);
+                        alert('Network error while deleting user. Please try again.');
+                    }
+                })();
             }
         }
 

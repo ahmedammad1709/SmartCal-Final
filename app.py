@@ -1386,6 +1386,63 @@ def unban_user(current_user):
     except Exception as e:
         return jsonify({'detail': str(e)}), 500
 
+@app.route('/admin/delete-user', methods=['POST'])
+@token_required
+def delete_user(current_user):
+    """Permanently delete a user and related data (admin only)."""
+    try:
+        data = request.get_json()
+        user_id = data.get('userId')
+
+        if not user_id:
+            return jsonify({'detail': 'User ID is required'}), 400
+
+        conn = sqlite3.connect('smartcal.db')
+        cursor = conn.cursor()
+
+        # Verify current user is admin
+        cursor.execute('SELECT role FROM users WHERE id = ?', (current_user,))
+        requester = cursor.fetchone()
+        if not requester or requester[0] != 'admin':
+            conn.close()
+            return jsonify({'detail': 'Only admin users can delete users'}), 403
+
+        # Prevent deleting self to avoid accidental lockout
+        if int(user_id) == int(current_user):
+            conn.close()
+            return jsonify({'detail': 'Admins cannot delete their own account'}), 400
+
+        # Check target user exists
+        cursor.execute('SELECT id, name, email FROM users WHERE id = ?', (user_id,))
+        target_user = cursor.fetchone()
+        if not target_user:
+            conn.close()
+            return jsonify({'detail': 'User not found'}), 404
+
+        # Delete dependent data: bookings via agendas, agendas, availability, preferences
+        # Delete bookings linked to user's agendas
+        cursor.execute('''
+            DELETE FROM bookings
+            WHERE agenda_id IN (SELECT id FROM agendas WHERE user_id = ?)
+        ''', (user_id,))
+
+        # Delete agendas owned by the user
+        cursor.execute('DELETE FROM agendas WHERE user_id = ?', (user_id,))
+
+        # Delete user availability and preferences
+        cursor.execute('DELETE FROM user_availability WHERE user_id = ?', (user_id,))
+        cursor.execute('DELETE FROM user_preferences WHERE user_id = ?', (user_id,))
+
+        # Finally, delete the user
+        cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
+
+        conn.commit()
+        conn.close()
+
+        print(f"🗑️ User {target_user[2]} (ID: {user_id}) deleted by admin {current_user}")
+        return jsonify({'message': f'User {target_user[1]} has been deleted successfully'}), 200
+    except Exception as e:
+        return jsonify({'detail': str(e)}), 500
 @app.route('/admin/delete-agenda', methods=['POST'])
 @token_required
 def delete_agenda(current_user):
