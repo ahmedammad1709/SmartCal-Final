@@ -2229,6 +2229,18 @@
                          </div>
 
                          <div class="form-group">
+                             <label for="teamMeetingType">Meeting Type</label>
+                             <select id="teamMeetingType" class="form-control">
+                                 <option value="virtual" selected>Virtual</option>
+                                 <option value="in-person">In-Person</option>
+                             </select>
+                         </div>
+                         <div class="form-group">
+                             <label for="teamMeetingDate">Meeting Date (optional)</label>
+                             <input type="date" id="teamMeetingDate" class="form-control">
+                         </div>
+
+                         <div class="form-group">
                              <label for="existingEmail">Enter Existing Email</label>
                              <div class="input-with-button">
                                  <input type="email" id="existingEmail" class="form-control" placeholder="Enter team member email" oninput="validateEmail('existingEmail', 'existingEmailBtn')">
@@ -2265,88 +2277,7 @@
 
 
                         
-                        <div class="form-section">
-                            <h3>Availability Schedule</h3>
-                        <div class="availability-grid">
-                        <div class="day-row">
-                            <div class="day-checkbox">
-                                <input type="checkbox" id="monday" class="day-check">
-                                <label for="monday">Monday</label>
-                            </div>
-                            <div class="time-range">
-                                <input type="time" id="mondayStart" class="time-input" value="09:00">
-                                <span>to</span>
-                                <input type="time" id="mondayEnd" class="time-input" value="17:00">
-                            </div>
-                        </div>
-                        <div class="day-row">
-                            <div class="day-checkbox">
-                                <input type="checkbox" id="tuesday" class="day-check" checked>
-                                <label for="tuesday">Tuesday</label>
-                            </div>
-                            <div class="time-range">
-                                <input type="time" id="tuesdayStart" class="time-input" value="09:00">
-                                <span>to</span>
-                                <input type="time" id="tuesdayEnd" class="time-input" value="17:00">
-                            </div>
-                        </div>
-                        <div class="day-row">
-                            <div class="day-checkbox">
-                                <input type="checkbox" id="wednesday" class="day-check" checked>
-                                <label for="wednesday">Wednesday</label>
-                            </div>
-                            <div class="time-range">
-                                <input type="time" id="wednesdayStart" class="time-input" value="09:00">
-                                <span>to</span>
-                                <input type="time" id="wednesdayEnd" class="time-input" value="17:00">
-                            </div>
-                        </div>
-                        <div class="day-row">
-                            <div class="day-checkbox">
-                                <input type="checkbox" id="thursday" class="day-check" checked>
-                                <label for="thursday">Thursday</label>
-                            </div>
-                            <div class="time-range">
-                                <input type="time" id="thursdayStart" class="time-input" value="09:00">
-                                <span>to</span>
-                                <input type="time" id="thursdayEnd" class="time-input" value="17:00">
-                            </div>
-                        </div>
-                        <div class="day-row">
-                            <div class="day-checkbox">
-                                <input type="checkbox" id="friday" class="day-check" checked>
-                                <label for="friday">Friday</label>
-                            </div>
-                            <div class="time-range">
-                                <input type="time" id="fridayStart" class="time-input" value="09:00">
-                                <span>to</span>
-                                <input type="time" id="fridayEnd" class="time-input" value="17:00">
-                            </div>
-                        </div>
-                        <div class="day-row">
-                            <div class="day-checkbox">
-                                <input type="checkbox" id="saturday" class="day-check">
-                                <label for="saturday">Saturday</label>
-                            </div>
-                            <div class="time-range">
-                                <input type="time" id="saturdayStart" class="time-input" value="10:00">
-                                <span>to</span>
-                                <input type="time" id="saturdayEnd" class="time-input" value="15:00">
-                            </div>
-                        </div>
-                        <div class="day-row">
-                            <div class="day-checkbox">
-                                <input type="checkbox" id="sunday" class="day-check">
-                                <label for="sunday">Sunday</label>
-                            </div>
-                            <div class="time-range">
-                                <input type="time" id="sundayStart" class="time-input" value="10:00">
-                                <span>to</span>
-                                <input type="time" id="sundayEnd" class="time-input" value="15:00">
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                        
 
 
 
@@ -2382,28 +2313,64 @@
             }
         }
 
-        function validateEmail(inputId, buttonId) {
+        async function validateEmail(inputId, buttonId) {
             const emailInput = document.getElementById(inputId);
             const addButton = document.getElementById(buttonId);
             const email = emailInput.value.trim();
 
-            // Regular expression for email validation
-            const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
+            // If outsider field: simple non-empty and loose format check
+            if (inputId === 'outsiderEmail') {
+                const emailRegex = /@/; // minimal check
+                const ok = emailRegex.test(email);
+                addButton.disabled = !ok;
+                emailInput.classList.toggle('valid-input', ok);
+                emailInput.classList.toggle('invalid-input', !ok && email.length > 0);
+                return;
+            }
 
-            if (emailRegex.test(email)) {
-                // Valid email format
-                addButton.disabled = false;
-                emailInput.classList.remove('invalid-input');
-                emailInput.classList.add('valid-input');
-            } else {
-                // Invalid email format
-                addButton.disabled = true;
-                emailInput.classList.remove('valid-input');
-                if (email !== '') {
-                    emailInput.classList.add('invalid-input');
-                } else {
+            // Existing email: only check DB existence, ignore strict regex
+            if (inputId === 'existingEmail') {
+                if (!email) {
+                    addButton.disabled = true;
+                    emailInput.classList.remove('valid-input');
                     emailInput.classList.remove('invalid-input');
+                    return;
                 }
+
+                // Capture current value to avoid race conditions
+                const probe = email;
+                addButton.disabled = true;
+                try {
+                    let res = await fetch('/users/exists', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: probe })
+                    });
+                    if (res.status === 404) {
+                        // Fallback to alias and GET
+                        res = await fetch(`/api/users/exists?email=${encodeURIComponent(probe)}`);
+                    }
+                    const data = res.ok ? await res.json() : { exists: false };
+                    // Ensure input hasn't changed while waiting
+                    if (emailInput.value.trim() !== probe) return;
+                    if (data.exists) {
+                        addButton.disabled = false;
+                        emailInput.classList.remove('invalid-input');
+                        emailInput.classList.add('valid-input');
+                    } else {
+                        addButton.disabled = true;
+                        emailInput.classList.remove('valid-input');
+                        emailInput.classList.add('invalid-input');
+                    }
+                } catch (e) {
+                    console.error('Failed to validate email existence:', e);
+                    // Ensure input hasn't changed
+                    if (emailInput.value.trim() !== probe) return;
+                    addButton.disabled = true;
+                    emailInput.classList.remove('valid-input');
+                    emailInput.classList.add('invalid-input');
+                }
+                return;
             }
         }
 
@@ -2453,6 +2420,8 @@
             const teamName = document.getElementById('teamName').value.trim();
             const memberItems = document.querySelectorAll('.member-item');
             const meetingDuration = document.getElementById('meetingDuration').value;
+            const meetingDateEl = document.getElementById('teamMeetingDate');
+            const meetingTypeEl = document.getElementById('teamMeetingType');
 
             // Validate team name
             if (!teamName) {
@@ -2495,7 +2464,9 @@
                 teamName,
                 members,
                 meetingDuration: parseInt(meetingDuration),
-                availability
+                availability,
+                meetingDate: meetingDateEl ? meetingDateEl.value || null : null,
+                meetingType: meetingTypeEl ? meetingTypeEl.value || 'virtual' : 'virtual'
             };
 
             try {
@@ -2527,8 +2498,9 @@
                 createButton.disabled = false;
 
                 if (response.ok) {
-                    // Show success modal
-                    showSuccessModal('Team Created Successfully', 'Your team has been created and is ready to use.');
+                    // Show success modal with Jitsi link if available
+                    const linkText = result.jitsiLink ? ` Jitsi link: ${result.jitsiLink}` : '';
+                    showSuccessModal('Team Created Successfully', `Your team has been created and is ready to use.${linkText ? '\\n' + linkText : ''}`);
                     closeTeamCreationModal();
                     // Refresh teams list
                     loadTeams();
@@ -2600,6 +2572,28 @@
                             duration.className = 'team-duration';
                             duration.textContent = `Meeting Duration: ${team.meetingDuration} minutes`;
                             teamDetails.appendChild(duration);
+
+                            // Meeting date/type and Jitsi link
+                            if (team.meetingDate) {
+                                const dateP = document.createElement('p');
+                                dateP.textContent = `Meeting Date: ${team.meetingDate}`;
+                                teamDetails.appendChild(dateP);
+                            }
+                            if (team.meetingType) {
+                                const typeP = document.createElement('p');
+                                typeP.textContent = `Meeting Type: ${team.meetingType}`;
+                                teamDetails.appendChild(typeP);
+                            }
+                            if (team.jitsiLink) {
+                                const linkP = document.createElement('p');
+                                const a = document.createElement('a');
+                                a.href = team.jitsiLink;
+                                a.target = '_blank';
+                                a.rel = 'noopener noreferrer';
+                                a.textContent = 'Join Jitsi Meeting';
+                                linkP.appendChild(a);
+                                teamDetails.appendChild(linkP);
+                            }
 
                             // Add members list
                             const membersList = document.createElement('div');

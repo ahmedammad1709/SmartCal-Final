@@ -40,11 +40,28 @@ def update_database_schema():
                 team_name TEXT NOT NULL,
                 created_by TEXT NOT NULL,
                 meeting_duration INTEGER NOT NULL,
+                meeting_date TEXT,
+                meeting_type TEXT DEFAULT 'virtual',
+                jitsi_link TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """)
             print("Created teams table")
             
+        # If teams table exists, ensure new columns exist
+        else:
+            cursor.execute("PRAGMA table_info(teams)")
+            team_columns = [column[1] for column in cursor.fetchall()]
+            if 'meeting_date' not in team_columns:
+                cursor.execute("ALTER TABLE teams ADD COLUMN meeting_date TEXT")
+                print("Added meeting_date column to teams table")
+            if 'meeting_type' not in team_columns:
+                cursor.execute("ALTER TABLE teams ADD COLUMN meeting_type TEXT DEFAULT 'virtual'")
+                print("Added meeting_type column to teams table")
+            if 'jitsi_link' not in team_columns:
+                cursor.execute("ALTER TABLE teams ADD COLUMN jitsi_link TEXT")
+                print("Added jitsi_link column to teams table")
+
         # Check if team_members table exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='team_members'")
         if not cursor.fetchone():

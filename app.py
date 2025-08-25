@@ -784,6 +784,28 @@ def reset_password():
     except Exception as e:
         return jsonify({'detail': str(e)}), 500
 
+@app.route('/users/exists', methods=['GET', 'POST'])
+@app.route('/api/users/exists', methods=['GET', 'POST'])
+def user_exists():
+    try:
+        if request.method == 'POST':
+            data = request.get_json(silent=True) or {}
+            email = (data.get('email') or '').strip()
+        else:
+            email = request.args.get('email', '').strip()
+        if not email:
+            return jsonify({'exists': False, 'detail': 'Email is required'}), 400
+
+        conn = sqlite3.connect('smartcal.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT 1 FROM users WHERE lower(email) = lower(?) LIMIT 1', (email,))
+        exists = cursor.fetchone() is not None
+        conn.close()
+
+        return jsonify({'exists': exists}), 200
+    except Exception as e:
+        return jsonify({'exists': False, 'detail': str(e)}), 500
+
 @app.route('/users/me', methods=['GET'])
 @token_required
 def get_user_info(current_user):
@@ -2131,10 +2153,20 @@ def create_team():
         conn = sqlite3.connect('smartcal.db')
         cursor = conn.cursor()
         
-        # Insert team data
+        # Derive meeting type and date
+        meeting_type = (data.get('meetingType') or 'virtual').lower()
+        meeting_date = data.get('meetingDate')
+
+        # Generate Jitsi link for virtual meetings
+        jitsi_link = None
+        if meeting_type == 'virtual':
+            room = f"smartcal-team-{team_id}-{int(datetime.now().timestamp())}"
+            jitsi_link = f"{BASE_JITSI_URL_PROD}/{room}"
+
+        # Insert team data with optional fields
         cursor.execute(
-            "INSERT INTO teams (team_id, team_name, created_by, meeting_duration) VALUES (?, ?, ?, ?)",
-            (team_id, data['teamName'], user_email, data.get('meetingDuration', 30))
+            "INSERT INTO teams (team_id, team_name, created_by, meeting_duration, meeting_date, meeting_type, jitsi_link) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (team_id, data['teamName'], user_email, data.get('meetingDuration', 30), meeting_date, meeting_type, jitsi_link)
         )
         
         # Insert team members
@@ -2158,12 +2190,75 @@ def create_team():
                 )
         
         conn.commit()
+
+        # Prepare and send emails to members and creator
+        try:
+            cursor.execute('SELECT name FROM users WHERE email = ?', (user_email,))
+            row = cursor.fetchone()
+            creator_name = row[0] if row else user_email
+        except Exception:
+            creator_name = user_email
+
+        recipients = list({m['email'] for m in data['members']})
+        recipients.append(user_email)
+        # de-duplicate while preserving order minimally
+        seen = set()
+        recipients = [r for r in recipients if not (r in seen or seen.add(r))]
+
+        formatted_date = None
+        if meeting_date:
+            try:
+                formatted_date = datetime.strptime(meeting_date, '%Y-%m-%d').strftime('%A, %B %d, %Y')
+            except Exception:
+                formatted_date = meeting_date
+
+        for recipient in recipients:
+            try:
+                msg = Message(
+                    subject=f"Team Meeting: {data['teamName']}",
+                    recipients=[recipient],
+                    body=(
+                        f"Hello,\n\n"
+                        f"You have been added to the team \"{data['teamName']}\" by {creator_name}.\n\n"
+                        f"Meeting Details:\n"
+                        f"- Type: {'In-Person' if meeting_type == 'in-person' else 'Virtual'}\n"
+                        + (f"- Date: {formatted_date}\n" if formatted_date else "")
+                        + f"- Duration: {data.get('meetingDuration', 30)} minutes\n"
+                        + ((f"- Meeting Link: {jitsi_link}\n") if (meeting_type == 'virtual' and jitsi_link) else "")
+                        + "\nMembers:\n"
+                        + "\n".join(["- " + m['email'] for m in data['members']])
+                        + "\n\nRegards,\nSmartCal\n"
+                    ),
+                    html=(
+                        f"<html><body>"
+                        f"<h2>Team Meeting: {data['teamName']}</h2>"
+                        f"<p>Hello,</p>"
+                        f"<p>You have been added to the team \"{data['teamName']}\" by {creator_name}.</p>"
+                        f"<h3>Meeting Details</h3>"
+                        f"<ul>"
+                        f"<li>Type: {'In-Person' if meeting_type == 'in-person' else 'Virtual'}</li>"
+                        + (f"<li>Date: {formatted_date}</li>" if formatted_date else "")
+                        + f"<li>Duration: {data.get('meetingDuration', 30)} minutes</li>"
+                        + ((f"<li>Meeting Link: <a href='{jitsi_link}' target='_blank'>{jitsi_link}</a></li>") if (meeting_type == 'virtual' and jitsi_link) else "")
+                        + "</ul>"
+                        + "<h3>Members</h3><ul>"
+                        + "".join([f"<li>{m['email']}</li>" for m in data['members']])
+                        + "</ul>"
+                        + "<p>Regards,<br/>SmartCal</p>"
+                        + "</body></html>"
+                    )
+                )
+                mail.send(msg)
+            except Exception as e:
+                print(f"Error sending team invite email to {recipient}: {e}")
+
         conn.close()
-        
+
         return jsonify({
             'success': True,
             'message': 'Team created successfully',
-            'teamId': team_id
+            'teamId': team_id,
+            'jitsiLink': jitsi_link
         })
     except Exception as e:
         print(f"Error creating team: {e}")
@@ -2228,6 +2323,9 @@ def get_teams():
                 'teamName': team['team_name'],
                 'meetingDuration': team['meeting_duration'],
                 'createdAt': team['created_at'],
+                'meetingDate': team['meeting_date'] if 'meeting_date' in team.keys() else None,
+                'meetingType': team['meeting_type'] if 'meeting_type' in team.keys() else None,
+                'jitsiLink': team['jitsi_link'] if 'jitsi_link' in team.keys() else None,
                 'members': members,
                 'availability': availability
             })
@@ -2260,26 +2358,93 @@ def delete_team(team_id):
         
         conn = sqlite3.connect('smartcal.db')
         cursor = conn.cursor()
-        
-        # Verify the team exists and belongs to the user
+
+        # Verify the team exists and belongs to the user and get details
         cursor.execute(
-            "SELECT * FROM teams WHERE team_id = ? AND created_by = ?",
+            "SELECT team_name, created_by, meeting_date, meeting_type FROM teams WHERE team_id = ? AND created_by = ?",
             (team_id, user_email)
         )
-        team = cursor.fetchone()
-        
-        if not team:
+        team_row = cursor.fetchone()
+
+        if not team_row:
+            conn.close()
             return jsonify({'error': 'Team not found or you do not have permission to delete it'}), 404
-        
-        # Delete the team (cascade will delete members and availability)
+
+        team_name, created_by, meeting_date, meeting_type = team_row
+
+        # Collect member emails before deletion
+        cursor.execute("SELECT email FROM team_members WHERE team_id = ?", (team_id,))
+        member_rows = cursor.fetchall()
+        member_emails = [row[0] for row in member_rows]
+
+        # Also include creator in notification
+        notification_recipients = list(dict.fromkeys(member_emails + [created_by]))
+
+        # Explicitly delete dependent rows to ensure cleanup without relying on PRAGMA foreign_keys
+        cursor.execute("DELETE FROM team_members WHERE team_id = ?", (team_id,))
+        cursor.execute("DELETE FROM team_availability WHERE team_id = ?", (team_id,))
         cursor.execute("DELETE FROM teams WHERE team_id = ?", (team_id,))
-        
+
+        # Verify deletion
+        cursor.execute("SELECT COUNT(1) FROM teams WHERE team_id = ?", (team_id,))
+        still_exists = cursor.fetchone()[0]
+
         conn.commit()
         conn.close()
-        
+
+        # Send deletion notification emails (best-effort)
+        emails_sent_to = []
+        try:
+            # Ensure an application context during email send
+            with app.app_context():
+                for recipient in notification_recipients:
+                    msg = Message(
+                        subject=f"Team Deleted: {team_name}",
+                        recipients=[recipient],
+                        body=f"""
+Hello,
+
+The team "{team_name}" has been deleted by {user_email}.
+
+Details:
+- Meeting Type: {meeting_type or 'N/A'}
+{('- Meeting Date: ' + str(meeting_date) + '\n') if meeting_date else ''}
+
+You are receiving this message because you were part of this team.
+
+Regards,
+SmartCal
+""",
+                        html=f"""
+<html>
+  <body>
+    <h2>Team Deleted: {team_name}</h2>
+    <p>Hello,</p>
+    <p>The team "{team_name}" has been deleted by {user_email}.</p>
+    <h3>Details</h3>
+    <ul>
+      <li>Meeting Type: {meeting_type or 'N/A'}</li>
+      {f'<li>Meeting Date: {meeting_date}</li>' if meeting_date else ''}
+    </ul>
+    <p>You are receiving this message because you were part of this team.</p>
+    <p>Regards,<br/>SmartCal</p>
+  </body>
+</html>
+"""
+                    )
+                    try:
+                        mail.send(msg)
+                        emails_sent_to.append(recipient)
+                    except Exception as e:
+                        print(f"Error sending team deletion email to {recipient}: {e}")
+        except Exception as e:
+            print(f"Error sending team deletion emails: {e}")
+
         return jsonify({
             'success': True,
-            'message': 'Team deleted successfully'
+            'message': 'Team deleted successfully',
+            'verifiedDeleted': (still_exists == 0),
+            'emailsSentTo': emails_sent_to
         })
     except Exception as e:
         print(f"Error deleting team: {e}")
