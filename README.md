@@ -10,32 +10,6 @@ A modern calendar booking system with AI-powered scheduling capabilities.
 - Responsive dashboard
 - Modern UI design
 
-## Setup Instructions
-
-### Prerequisites
-
-- Python 3.7 or higher
-- pip (Python package installer)
-
-### Installation
-
-1. **Clone or download the project files**
-
-2. **Install Python dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run the application:**
-   ```bash
-   python app.py
-   ```
-
-4. **Access the application:**
-   - Open your web browser
-   - Go to `http://localhost:5000`
-   - The main page will load with navigation to login and register
-
 ## Usage
 
 ### Registration
